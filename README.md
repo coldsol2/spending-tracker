@@ -84,6 +84,17 @@ PDF는 표를 먼저 읽고, 표가 안 잡히면 날짜로 시작하는 줄을 
 | `static/` | 화면 (HTML·CSS·JS, 빌드 과정 없음) |
 | `docs/superpowers/` | 설계 문서와 구현 계획 |
 
+## 공유용 데모 페이지
+
+서버 없이 브라우저에서 돌아가는 데모를 HTML 한 파일로 만들 수 있어요. 화면은 `static/`을 그대로 쓰고,
+서버 대신 `demo/mock_api.js`가 연습용 가짜 거래로 응답해요(업로드·AI 호출은 막혀 있음).
+
+```bash
+python demo/build_demo.py
+```
+
+결과는 `demo/dist/spending-demo.html`에 생겨요. 화면을 고친 뒤 다시 실행하면 최신 화면으로 다시 만들어져요.
+
 ## 테스트
 
 ```bash
