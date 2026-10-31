@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f0fb">
+  <title>실지출 트래커</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9h8M8 12.5h8M8 16h5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-hands" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h10l-3-3M17 16H7l3 3"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M10 20V5M15 20v-7M20 20v-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9.5 14.5 12 12l2.5 2.5"/></symbol>
+</svg>
+
+<div class="app">
+  <div id="ai-warning" class="notice warn" hidden>
+    AI 기능이 꺼져 있어요. <code>.env</code>에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜면 자동 분류와 정산 제안을 쓸 수 있어요.
+  </div>
+
+  <!-- 홈 -->
+  <section class="view active" id="view-home">
+    <header class="topbar">
+      <div>
+        <p class="greet-small" id="greet">안녕하세요</p>
+        <h1 id="mood">이번 달 소비를 확인해 볼까요</h1>
+      </div>
+      <button class="icon-btn" data-go="budget" aria-label="예산 설정"><svg><use href="#i-gear"/></svg></button>
+    </header>
+
+    <div class="hero">
+      <label class="month-pill"><span id="month-label">이번 달</span><svg><use href="#i-down"/></svg>
+        <input type="month" id="month" aria-label="볼 달 선택"></label>
+      <div class="hero-amount">
+        <div class="label">실제로 쓴 돈</div>
+        <div class="big"><b id="total" class="num">0</b><span>원</span></div>
+        <div class="detail" id="total-detail"></div>
+      </div>
+      <div class="hero-row">
+        <div class="ring" id="ring" role="img" aria-label="카테고리별 지출 비율">
+          <div class="ring-center">
+            <div class="pct" id="ring-pct">-</div>
+            <div class="cap" id="ring-cap">예산 사용</div>
+          </div>
+        </div>
+        <ul class="legend" id="legend"></ul>
+      </div>
+      <div class="hero-foot" id="hero-foot" hidden>
+        <span id="projected"></span>
+        <button data-go="settle">확인하기</button>
+      </div>
+    </div>
+
+    <div class="quad">
+      <div><div class="ico">☀️</div><div class="k">오늘</div><div class="v" id="today">-</div></div>
+      <div><div class="ico">🗓️</div><div class="k">하루 평균</div><div class="v" id="avg">-</div></div>
+      <div><div class="ico">💜</div><div class="k">수입</div><div class="v" id="income">-</div></div>
+      <div><button data-go="txns"><div class="ico">🏷️</div><div class="k">분류 확인</div><div class="v" id="review-num">-</div></button></div>
+    </div>
+
+    <div id="feature"></div>
+
+    <div class="card">
+      <div class="card-title"><h2>이번 주</h2><span class="aside" id="week-range"></span></div>
+      <div class="week" id="week"></div>
+      <p class="week-note" id="week-note"></p>
+    </div>
+
+    <div class="card-title" style="margin:20px 4px 10px"><h2>카테고리</h2><span class="aside" id="cat-aside"></span></div>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="card-title"><h2>많이 쓴 곳</h2><button class="btn-ghost btn" style="padding:4px 12px;font-size:13px" data-go="txns">전체 보기</button></div>
+      <div class="rows" id="top-list"></div>
+    </div>
+  </section>
+
+  <!-- 거래내역 -->
+  <section class="view" id="view-txns">
+    <header class="topbar">
+      <div><h1>거래내역</h1><p class="sub" id="txns-sub"></p></div>
+      <label class="month-pill"><span class="month-label-copy">이번 달</span><svg><use href="#i-down"/></svg>
+        <input type="month" class="month-copy" aria-label="볼 달 선택"></label>
+    </header>
+
+    <div class="card" id="review-card">
+      <div class="card-title"><h2>분류 확인</h2><span class="aside" id="review-count"></span></div>
+      <p class="hint">친구 송금이나 페이 결제처럼 용도가 그때그때 다른 거래, AI가 확신하지 못한 거래예요. 맞는 카테고리를 눌러 주세요.</p>
+      <div id="review-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <h2>전체</h2>
+        <button class="btn btn-soft" id="recat-btn" style="padding:6px 14px;font-size:13px">AI로 다시 분류</button>
+      </div>
+      <p class="hint">가게의 카테고리를 바꾸면 같은 가게의 다른 거래와 앞으로 올라올 거래에도 적용돼요. '제외'는 실지출에서 빠져요.</p>
+      <div id="recat-status" class="hint" hidden></div>
+      <div id="txn-list"></div>
+    </div>
+  </section>
+
+  <!-- 정산 -->
+  <section class="view" id="view-settle">
+    <header class="topbar"><div><h1>정산</h1><p class="sub">친구들이 보내준 돈을 원래 결제에 연결해요.</p></div></header>
+
+    <div class="card">
+      <div class="card-title"><h2>확인 대기</h2><span class="aside" id="pending-count"></span></div>
+      <p class="hint">AI가 연결해 본 거예요. 확정한 금액만 실지출에서 빠져요.</p>
+      <div id="pending-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><h2>직접 연결</h2></div>
+      <label class="field">받은 돈<select id="link-incoming"></select></label>
+      <label class="field">어느 결제의 정산인가요<select id="link-payment"></select></label>
+      <button class="btn btn-ink btn-block" id="link-btn">연결하기</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><h2>확정된 정산·결제 취소</h2><span class="aside" id="confirmed-count"></span></div>
+      <div id="confirmed-list"></div>
+    </div>
+  </section>
+
+  <!-- 보고서 -->
+  <section class="view" id="view-report">
+    <header class="topbar"><div><h1>주간 보고서</h1><p class="sub">예산과 지난 주를 기준으로 줄일 수 있었던 곳을 짚어 줘요.</p></div></header>
+    <div class="weeks" id="weeks"></div>
+    <div class="duo">
+      <div class="card"><div class="k">이번 주 실지출</div><div class="v"><b class="num" id="wk-this">-</b><span>원</span></div><div class="delta" id="wk-delta"></div></div>
+      <div class="card"><div class="k">주간 예산</div><div class="v"><b class="num" id="wk-budget">-</b><span>원</span></div><div class="delta muted" id="wk-budget-note"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>보고서</h2><button class="btn btn-pink" id="report-btn" style="padding:7px 16px;font-size:13.5px">보고서 만들기</button></div>
+      <div id="report-status" class="hint" hidden></div>
+      <article class="report" id="report-body"></article>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>이번 달 일별 실지출</h2></div>
+      <div class="chart-box"><canvas id="daily-chart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- 업로드 -->
+  <section class="view" id="view-upload">
+    <header class="topbar">
+      <button class="icon-btn" data-back aria-label="뒤로"><svg><use href="#i-back"/></svg></button>
+      <div style="flex:1"><h1>거래내역 올리기</h1></div>
+    </header>
+    <div class="card">
+      <label class="field">PDF 비밀번호 (걸려 있다면, 보통 생년월일 6자리)
+        <input type="password" id="pdf-password" autocomplete="off" placeholder="비밀번호 없음"></label>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".pdf,.csv,.xlsx">
+        <span class="em"><svg><use href="#i-file"/></svg></span>
+        <b id="drop-text">파일을 끌어다 놓거나 눌러서 고르기</b>
+        <span>토스 거래내역서 PDF · 엑셀 · CSV</span>
+      </label>
+      <div id="upload-result" style="margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>토스에서 받는 방법</h2></div>
+      <ol class="steps">
+        <li>토스 앱에서 토스뱅크 통장을 열어요.</li>
+        <li>거래내역 → 거래내역서 발급을 눌러요.</li>
+        <li>기간을 고르고 PDF로 받아 여기에 올려요.</li>
+      </ol>
+      <p class="hint" style="margin:10px 0 0">같은 파일을 다시 올려도 거래가 두 번 들어가지 않아요.</p>
+    </div>
+  </section>
+
+  <!-- 예산 -->
+  <section class="view" id="view-budget">
+    <header class="topbar">
+      <button class="icon-btn" data-back aria-label="뒤로"><svg><use href="#i-back"/></svg></button>
+      <div style="flex:1"><h1>한 달 예산</h1><p class="sub">비워 두면 예산 없음. 주간 보고서는 월 예산을 주 단위로 나눠 비교해요.</p></div>
+    </header>
+    <div class="card"><form id="budget-form"></form></div>
+    <button class="btn btn-ink btn-block" id="budget-save">예산 저장</button>
+    <span class="saved" id="budget-saved" hidden>저장했어요</span>
+  </section>
+</div>
+
+<nav class="tabbar" aria-label="화면 이동">
+  <button data-tab="home" class="active"><svg><use href="#i-home"/></svg>홈</button>
+  <button data-tab="txns"><svg><use href="#i-list"/></svg>거래<span class="badge" id="review-badge" hidden></span></button>
+  <button class="fab" data-tab="upload" aria-label="거래내역 올리기"><svg><use href="#i-plus"/></svg></button>
+  <button data-tab="settle"><svg><use href="#i-hands"/></svg>정산<span class="badge" id="pending-badge" hidden></span></button>
+  <button data-tab="report"><svg><use href="#i-report"/></svg>보고서</button>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

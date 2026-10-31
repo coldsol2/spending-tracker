@@ -1,0 +1,22 @@
+# 비밀 값: API 키
+.env
+
+# 내 거래내역이 들어 있는 DB
+data/
+
+# 혹시 프로젝트 폴더에 둔 실제 거래내역서
+*.pdf
+!samples/*.pdf
+*.xlsx
+!samples/*.xlsx
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 편집기·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
