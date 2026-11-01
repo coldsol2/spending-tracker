@@ -38,9 +38,11 @@ def import_file(conn: sqlite3.Connection, filename: str, data: bytes, llm, passw
     for name in {t.description.strip() for t in txns if t.owner}:
         conn.execute("INSERT OR IGNORE INTO account_owners(name) VALUES (?)", (name,))
     owners = owner_names(conn)
-    is_mine = lambda t: settle.is_internal(t.description) or t.description.strip() in owners  # noqa: E731
-    internal = [t for t in txns if is_mine(t)]
-    txns = [t for t in txns if not is_mine(t)]
+    internal, kept = [], []
+    for t in txns:
+        mine = settle.is_internal(t.description) or t.description.strip() in owners
+        (internal if mine else kept).append(t)
+    txns = kept
     if internal:
         warnings.append(f"내 계좌끼리 오간 돈(비상금·환전·내 이름 계좌) {len(internal)}건은 수입·지출에서 뺐어요.")
 
@@ -164,20 +166,27 @@ def _settled(conn, status: str, payment_ids: list[int]) -> list[tuple[int, int]]
     return [(r["payment_id"], r["amount"]) for r in rows]
 
 
+def _days(start: date, end: date) -> tuple[str, str]:
+    """start~end(포함) 기간을 occurred_at 문자열 범위로. date(occurred_at)로 감싸지 않아야 인덱스를 쓴다."""
+    return start.isoformat(), (end + timedelta(days=1)).isoformat()
+
+
+def in_period(col: str = "occurred_at") -> str:
+    return f"{col} >= ? AND {col} < ?"
+
+
 def period_summary(conn: sqlite3.Connection, start: date, end: date, top_n: int = 10) -> dict:
     payments = [_tx(r) for r in conn.execute(
-        "SELECT * FROM transactions WHERE direction = 'out' AND date(occurred_at) BETWEEN ? AND ? "
-        "AND COALESCE(category, '') != ?",
-        (start.isoformat(), end.isoformat(), cat_agent.EXCLUDED))]
+        f"SELECT * FROM transactions WHERE direction = 'out' AND {in_period()} AND COALESCE(category, '') != ?",
+        (*_days(start, end), cat_agent.EXCLUDED))]
     ids = [p["id"] for p in payments]
     s = stats.summarize(payments, _settled(conn, "confirmed", ids), _settled(conn, "pending", ids), start, end)
     net = s.pop("net")
 
     income = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE direction = 'in' "
-        "AND date(occurred_at) BETWEEN ? AND ? "
+        f"SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE direction = 'in' AND {in_period()} "
         "AND id NOT IN (SELECT incoming_id FROM settlements WHERE status = 'confirmed')",
-        (start.isoformat(), end.isoformat())).fetchone()[0]
+        _days(start, end)).fetchone()[0]
 
     top = sorted(payments, key=lambda p: -net[p["id"]])[:top_n]
     s["income"] = income
@@ -204,15 +213,16 @@ NEEDS_REVIEW = (
 TXN_SELECT = (
     "SELECT t.*, COALESCE(m.varies, 0) AS varies, "
     f"CASE WHEN {NEEDS_REVIEW} THEN 1 ELSE 0 END AS needs_review, "
-    "(SELECT status FROM settlements s WHERE s.incoming_id = t.id AND s.status = 'confirmed') AS settled "
+    # 줄마다 정산 표를 뒤지지 않도록 확정된 입금 목록을 한 번만 만든다
+    "CASE WHEN t.id IN (SELECT incoming_id FROM settlements WHERE status = 'confirmed') "
+    "THEN 'confirmed' END AS settled "
     "FROM transactions t LEFT JOIN merchant_categories m ON m.merchant = t.description "
 )
 
 
 def list_transactions(conn: sqlite3.Connection, month: str) -> list[dict]:
-    start, end = month_range(month)
-    rows = conn.execute(TXN_SELECT + "WHERE date(t.occurred_at) BETWEEN ? AND ? ORDER BY t.occurred_at DESC",
-                        (start.isoformat(), end.isoformat()))
+    rows = conn.execute(TXN_SELECT + f"WHERE {in_period('t.occurred_at')} ORDER BY t.occurred_at DESC",
+                        _days(*month_range(month)))
     return [_tx_json(_tx(r)) for r in rows]
 
 

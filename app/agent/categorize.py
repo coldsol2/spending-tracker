@@ -1,6 +1,7 @@
 """가맹점 → 카테고리 분류. 한 번 분류한 가맹점은 캐시해서 다시 묻지 않는다."""
 import json
 import sqlite3
+from collections import Counter, defaultdict
 from typing import Literal
 
 from pydantic import BaseModel
@@ -60,18 +61,29 @@ def remember(conn: sqlite3.Connection, merchant: str, category: str, source: str
     )
 
 
-def _merchant_context(conn: sqlite3.Connection, merchant: str) -> dict:
-    rows = conn.execute(
-        "SELECT kind, amount, occurred_at FROM transactions WHERE description = ? AND direction = 'out' "
-        "ORDER BY occurred_at DESC", (merchant,)).fetchall()
-    kinds = [r["kind"] for r in rows if r["kind"]]
-    return {
-        "name": merchant,
-        "kind": max(set(kinds), key=kinds.count) if kinds else None,
-        "count": len(rows),
-        "amounts": [r["amount"] for r in rows[:3]],
-        "times": [r["occurred_at"][11:16] for r in rows[:3]],
-    }
+def _marks(items: list) -> str:
+    return ",".join("?" * len(items))
+
+
+def _merchant_contexts(conn: sqlite3.Connection, merchants: list[str]) -> list[dict]:
+    """AI에 보낼 가게별 정보(거래 유형, 건수, 최근 금액·시각)를 한 번의 조회로 모은다."""
+    rows_by = defaultdict(list)
+    for r in conn.execute(
+            f"SELECT description, kind, amount, occurred_at FROM transactions WHERE direction = 'out' "
+            f"AND description IN ({_marks(merchants)}) ORDER BY occurred_at DESC", merchants):
+        rows_by[r["description"]].append(r)
+    out = []
+    for m in merchants:
+        rows = rows_by[m]
+        kinds = Counter(r["kind"] for r in rows if r["kind"])
+        out.append({
+            "name": m,
+            "kind": kinds.most_common(1)[0][0] if kinds else None,
+            "count": len(rows),
+            "amounts": [r["amount"] for r in rows[:3]],
+            "times": [r["occurred_at"][11:16] for r in rows[:3]],
+        })
+    return out
 
 
 def _examples(conn: sqlite3.Connection) -> list[dict]:
@@ -82,21 +94,20 @@ def _examples(conn: sqlite3.Connection) -> list[dict]:
 
 def categorize(conn: sqlite3.Connection, llm, merchants: list[str]) -> dict[str, str]:
     """캐시에 있는 건 바로, 없는 것만 Claude에 묻는다. llm이 None이면 캐시 결과만 돌려준다."""
-    result: dict[str, str] = {}
-    missing: list[str] = []
-    for m in dict.fromkeys(merchants):
-        cat = cached(conn, m)
-        if cat:
-            result[m] = cat
-        else:
-            missing.append(m)
+    unique = list(dict.fromkeys(merchants))
+    if not unique:
+        return {}
+    known = {r["merchant"]: r["category"] for r in conn.execute(
+        f"SELECT merchant, category FROM merchant_categories WHERE merchant IN ({_marks(unique)})", unique)}
+    result = {m: known[m] for m in unique if m in known}
+    missing = [m for m in unique if m not in known]
 
     if llm is None or not missing:
         return result
     examples = _examples(conn)
     for i in range(0, len(missing), BATCH_SIZE):
         batch = missing[i:i + BATCH_SIZE]
-        payload = {"merchants": [_merchant_context(conn, m) for m in batch], "examples": examples}
+        payload = {"merchants": _merchant_contexts(conn, batch), "examples": examples}
         out = llm.parse(SYSTEM, json.dumps(payload, ensure_ascii=False), CategoryResult)
         for item in out.items:
             if item.merchant in batch and item.merchant not in result:

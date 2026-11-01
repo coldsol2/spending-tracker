@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS settlements (
     group_id INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS settlement_pair ON settlements(incoming_id, payment_id);
+CREATE INDEX IF NOT EXISTS settlement_payment ON settlements(payment_id);
+CREATE INDEX IF NOT EXISTS transaction_time ON transactions(occurred_at);
+CREATE INDEX IF NOT EXISTS transaction_name ON transactions(description);
 -- PDF의 예금주처럼 내 이름: 이 이름과 오간 돈은 내 계좌끼리의 이동이다
 CREATE TABLE IF NOT EXISTS account_owners (
     name TEXT PRIMARY KEY
@@ -81,13 +85,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+# 스키마 만들기와 이전 작업은 DB 파일마다 한 번만 한다 (요청마다 연결을 새로 열기 때문)
+_ready: set[Path] = set()
+_ready_lock = threading.Lock()
+
+
 def connect(path: str | os.PathLike | None = None) -> sqlite3.Connection:
-    path = Path(path or os.environ.get("APP_DB") or ROOT / "data" / "app.db")
+    path = Path(path or os.environ.get("APP_DB") or ROOT / "data" / "app.db").resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    existed = path.exists()
     # 요청마다 새 연결을 쓰지만 FastAPI가 의존성과 엔드포인트를 다른 스레드에서 돌릴 수 있다
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    if path not in _ready or not existed:  # 서버가 켜진 동안 파일이 지워졌어도 다시 만든다
+        with _ready_lock:
+            conn.executescript(SCHEMA)
+            _migrate(conn)
+            _ready.add(path)
     return conn

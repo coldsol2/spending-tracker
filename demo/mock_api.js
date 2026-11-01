@@ -93,11 +93,9 @@ PENDING.forEach(([ia, id, pa, pd, reason]) =>
 demo.settlements.forEach((s, i) => (s.id = i + 1));
 
 // ---- 계산 (app/stats.py, app/service.py와 같은 규칙) ----
-const pad = (n) => String(n).padStart(2, "0");
-const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const dateOf = (s) => { const [y, m, d] = s.slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
-const plusDays = (s, n) => { const d = dateOf(s); d.setDate(d.getDate() + n); return isoOf(d); };
-const monthDays = (s) => { const d = dateOf(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+// 날짜 도우미는 같은 페이지에 묶이는 static/app.js의 isoDate·parseDate·addDays·daysIn을 쓴다(호출 시점엔 이미 정의됨)
+const plusDays = (s, n) => isoDate(addDays(parseDate(s), n));
+const monthDays = (s) => daysIn(s.slice(0, 7));
 // 정산 하나가 결제 여러 개를 덮을 수 있다: [{id: 결제 id, share: 나눠 준 금액}]
 const parts = (s) => s.parts || [{ id: s.payment_id, share: byId(s.incoming_id).amount }];
 function allocate(amount, ids) {
@@ -161,7 +159,7 @@ function demoRoute(path, opts) {
   if (p === "/api/meta") return { categories: DEMO_CATEGORIES, ai_enabled: true, today: DEMO_TODAY };
   if (p === "/api/summary") {
     const month = url.searchParams.get("month");
-    const start = `${month}-01`, end = `${month}-${pad(monthDays(start))}`;
+    const start = `${month}-01`, end = `${month}-${String(monthDays(start)).padStart(2, "0")}`;
     const s = summarize(start, end);
     return { ...s, month, today: s.daily[DEMO_TODAY] || 0, budgets: { ...demo.budgets } };
   }
