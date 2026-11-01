@@ -1,6 +1,7 @@
 """주간 절약 보고서. 숫자는 코드가 계산하고, Claude는 해석과 제안만 쓴다."""
 import json
 import sqlite3
+import threading
 from datetime import date, datetime, timedelta
 
 from .. import service
@@ -20,6 +21,7 @@ SYSTEM = """너는 사용자의 개인 소비 코치다. 입력 JSON에는 한 �
 ## 지난 주 대비 (많이 늘어난 카테고리)
 ## 이번 주에 줄일 수 있었던 곳 (실제 결제 항목을 근거로 구체적인 금액과 함께 2~3개)
 ## 다음 주 목표 (실천 가능한 한 가지)
+친구에게 말하듯 '~했어요', '~해 보세요' 같은 해요체로 쓴다.
 금액은 '12,300원'처럼 쓴다. 입력에 없는 숫자를 지어내지 말고, 전체 400단어 이내로 쓴다."""
 
 
@@ -52,6 +54,39 @@ def generate(conn: sqlite3.Connection, llm, week_start: date) -> str:
         (ws.isoformat(), content, datetime.now().isoformat(timespec="seconds")))
     conn.commit()
     return content
+
+
+def last_full_week(today: date) -> date:
+    """오늘 기준으로 이미 끝난 가장 최근 주의 월요일."""
+    return week_start_of(today) - timedelta(days=7)
+
+
+# 앱을 여러 탭에서 동시에 열어도 같은 주 보고서를 두 번 만들지 않게 한다
+_auto_lock = threading.Lock()
+
+
+def ensure_last_week(conn: sqlite3.Connection, llm, today: date) -> dict:
+    """지난 주 보고서가 없으면 만든다. 결과 상태:
+    exists(이미 있음) · no_ai(키 없음) · waiting_data(그 주 일요일까지 거래가 아직 안 올라옴)
+    · no_spending(그 주 지출 없음) · created(새로 만듦) · failed(AI 호출 실패)"""
+    ws = last_full_week(today)
+    we = ws + timedelta(days=6)
+    result = {"week_start": ws.isoformat()}
+    with _auto_lock:
+        if conn.execute("SELECT 1 FROM reports WHERE week_start = ?", (ws.isoformat(),)).fetchone():
+            return {"status": "exists", **result}
+        if llm is None:
+            return {"status": "no_ai", **result}
+        latest = conn.execute("SELECT MAX(date(occurred_at)) FROM transactions").fetchone()[0]
+        if not latest or latest < we.isoformat():
+            return {"status": "waiting_data", **result}
+        if not service.period_summary(conn, ws, we)["gross"]:
+            return {"status": "no_spending", **result}
+        try:
+            generate(conn, llm, ws)
+        except LLMError as e:
+            return {"status": "failed", "message": str(e), **result}
+        return {"status": "created", **result}
 
 
 def list_reports(conn: sqlite3.Connection) -> list[dict]:

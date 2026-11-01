@@ -36,6 +36,7 @@ class Txn:
     balance: int | None = None
     source_hash: str = ""
     kind: str = ""  # 은행이 적은 거래 유형(체크카드결제, 입금 등). 결제 취소 판별에 쓴다
+    owner: bool = False  # 상대가 거래내역서의 예금주(내 이름)인지: 내 계좌끼리의 이동
 
 
 def parse_amount(value) -> int:

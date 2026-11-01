@@ -33,11 +33,7 @@
   <!-- 홈 -->
   <section class="view active" id="view-home">
     <header class="topbar">
-      <div>
-        <p class="greet-small" id="greet">안녕하세요</p>
-        <h1 id="mood">이번 달 소비를 확인해 볼까요</h1>
-      </div>
-      <button class="icon-btn" data-go="budget" aria-label="예산 설정"><svg><use href="#i-gear"/></svg></button>
+      <button class="icon-btn" data-go="budget" aria-label="예산 설정" style="margin-left:auto"><svg><use href="#i-gear"/></svg></button>
     </header>
 
     <div class="hero">
@@ -48,15 +44,7 @@
         <div class="big"><b id="total" class="num">0</b><span>원</span></div>
         <div class="detail" id="total-detail"></div>
       </div>
-      <div class="hero-row">
-        <div class="ring" id="ring" role="img" aria-label="카테고리별 지출 비율">
-          <div class="ring-center">
-            <div class="pct" id="ring-pct">-</div>
-            <div class="cap" id="ring-cap">예산 사용</div>
-          </div>
-        </div>
-        <ul class="legend" id="legend"></ul>
-      </div>
+      <div class="cat-cols" id="cat-cols" role="img" aria-label="카테고리별 실지출"></div>
       <div class="hero-foot" id="hero-foot" hidden>
         <span id="projected"></span>
         <button data-go="settle">확인하기</button>
@@ -125,7 +113,8 @@
     <div class="card">
       <div class="card-title"><h2>직접 연결</h2></div>
       <label class="field">받은 돈<select id="link-incoming"></select></label>
-      <label class="field">어느 결제의 정산인가요<select id="link-payment"></select></label>
+      <div class="field">어느 결제의 정산인가요 (여러 개 골라도 돼요. 1차·2차를 같이 낸 돈처럼)
+        <div class="pick-list" id="link-payments" role="group" aria-label="정산할 결제"></div></div>
       <button class="btn btn-ink btn-block" id="link-btn">연결하기</button>
     </div>
 

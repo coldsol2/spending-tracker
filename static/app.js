@@ -24,7 +24,7 @@ const CATS = {
 const cat = (name) => CATS[name || "기타"] || CATS.기타;
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-const state = { meta: null, month: null, view: "home", prev: "home", reports: [], week: null, chart: null };
+const state = { meta: null, month: null, view: "home", prev: "home", reports: [], week: null, chart: null, home: null, autoReport: null };
 
 async function api(path, opts = {}) {
   if (opts.json !== undefined) {
@@ -92,51 +92,29 @@ async function refreshBadges() {
 }
 
 // ---------- 홈 ----------
-function greeting() {
-  const h = new Date().getHours();
-  return h < 6 ? "늦은 밤이에요" : h < 12 ? "좋은 아침이에요" : h < 18 ? "좋은 오후예요" : "좋은 저녁이에요";
-}
-
 async function loadHome() {
   const [s, badges] = await Promise.all([api(`/api/summary?month=${state.month}`), refreshBadges()]);
   const isThisMonth = state.month === state.meta.today.slice(0, 7);
   const budgetTotal = Object.entries(s.budgets).filter(([c]) => c !== "제외").reduce((a, [, v]) => a + v, 0);
   const cats = Object.entries(s.by_category).filter(([, v]) => v > 0);
 
-  // 링: 카테고리 비율을 색으로, 가운데는 예산 사용률(없으면 가장 큰 카테고리 비중)
-  let acc = 0;
-  const stops = cats.map(([c, v]) => {
-    const from = (acc / s.total) * 100; acc += v;
-    return `${cat(c).c} ${from}% ${(acc / s.total) * 100}%`;
-  });
-  $("#ring").style.background = s.total ? `conic-gradient(${stops.join(",")})` : "conic-gradient(var(--lilac-soft) 0 100%)";
-  const rest = cats.slice(4).reduce((a, [, v]) => a + v, 0);
-  $("#legend").innerHTML = cats.slice(0, 4).map(([c, v]) =>
-    `<li><i style="--c:${cat(c).c}"></i><span>${esc(c)}</span><b>${Math.round((v / s.total) * 100)}%</b></li>`).join("")
-    + (rest ? `<li><i style="--c:var(--ink-faint)"></i><span>그 외</span><b>${Math.round((rest / s.total) * 100)}%</b></li>` : "");
-  if (budgetTotal) {
-    const pct = Math.round((s.total / budgetTotal) * 100);
-    $("#ring-pct").innerHTML = `${pct}<small>%</small>`;
-    $("#ring-cap").textContent = "예산 사용";
-  } else if (cats.length) {
-    $("#ring-pct").innerHTML = `${Math.round((cats[0][1] / s.total) * 100)}<small>%</small>`;
-    $("#ring-cap").textContent = `${cats[0][0]} 비중`;
-  } else {
-    $("#ring-pct").textContent = "0";
-    $("#ring-cap").textContent = "아직 지출 없음";
-  }
-
-  $("#greet").textContent = greeting();
-  $("#mood").textContent = !s.gross ? "거래내역을 올려서 시작해요"
-    : budgetTotal ? (s.total <= budgetTotal * (isThisMonth ? new Date().getDate() / daysIn(state.month) : 1)
-      ? "예산 안에서 잘 쓰고 있어요" : "이번 달은 예산보다 빨라요")
-    : "이번 달 소비를 정리했어요";
+  // 카테고리를 옆으로 나란히, 큰 순서대로 세로 막대
+  const maxCat = cats.length ? cats[0][1] : 0;
+  const box = $("#cat-cols");
+  box.style.gridTemplateColumns = `repeat(${Math.max(cats.length, 1)}, minmax(0, 1fr))`;
+  box.setAttribute("aria-label", cats.map(([c, v]) => `${c} ${won(v)}`).join(", ") || "카테고리별 지출 없음");
+  box.innerHTML = cats.length ? cats.map(([c, v]) => `<div>
+      <div class="v">${short(v)}</div>
+      <div class="bar" style="height:${Math.max(6, Math.round((v / maxCat) * 110))}px;--c:${cat(c).c}"></div>
+      <div class="n">${esc(c)}</div><div class="p">${Math.round((v / s.total) * 100)}%</div>
+    </div>`).join("") : `<div class="empty">이 달의 지출이 아직 없어요.</div>`;
 
   $("#total").textContent = num(s.total);
   const back = s.gross - s.total;
-  $("#total-detail").innerHTML = back > 0
+  $("#total-detail").innerHTML = (back > 0
     ? `토스 기준 ${won(s.gross)}에서<br><b>${won(back)}</b>을 돌려받았어요`
-    : `토스 기준 ${won(s.gross)}`;
+    : `토스 기준 ${won(s.gross)}`)
+    + (budgetTotal ? `<br>한 달 예산 ${won(budgetTotal)} 중 <b>${Math.round((s.total / budgetTotal) * 100)}%</b> 썼어요` : "");
   $("#hero-foot").hidden = s.projected_total === s.total;
   $("#projected").textContent = `대기 중인 정산을 확정하면 ${won(s.projected_total)}`;
 
@@ -146,6 +124,7 @@ async function loadHome() {
   $("#income").textContent = short(s.income);
   $("#review-num").textContent = `${badges.review.length}건`;
 
+  state.home = { s, badges };
   renderFeature(s, badges);
   renderWeek(s, budgetTotal);
   renderTiles(s, cats);
@@ -157,9 +136,44 @@ async function loadHome() {
 
 const daysIn = (month) => { const [y, m] = month.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 
+// ---------- 지난 주 보고서 자동 작성 ----------
+// 본 보고서는 브라우저에 기억해 두고 홈 카드를 다시 띄우지 않는다 (저장이 막힌 환경이면 매번 보일 뿐)
+const seenKey = (week) => `seen-report-${week}`;
+function reportSeen(week) { try { return localStorage.getItem(seenKey(week)) === "1"; } catch { return false; } }
+function markReportSeen(week) { try { localStorage.setItem(seenKey(week), "1"); } catch { /* 무시 */ } }
+
+async function autoReport() {
+  try {
+    state.autoReport = await api("/api/reports/auto", { method: "POST" });
+  } catch {
+    return;
+  }
+  if (state.view === "home" && state.home) renderFeature(state.home.s, state.home.badges);
+}
+
+function unseenReport() {
+  const r = state.autoReport;
+  return r && ["created", "exists"].includes(r.status) && !reportSeen(r.week_start) ? r.week_start : null;
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-open-report]");
+  if (!b) return;
+  state.week = b.dataset.openReport;
+  markReportSeen(state.week);
+  go("report");
+});
+
 function renderFeature(s, { settlements, review }) {
   let html;
-  if (!s.gross && !s.income) {
+  const reportWeek = unseenReport();
+  if (reportWeek) {
+    const end = isoDate(addDays(parseDate(reportWeek), 6));
+    html = `<div class="feature calm"><p class="kicker">주간 보고서 · ${md(reportWeek)} – ${md(end)}</p>
+      <h3>지난 주 보고서가 나왔어요</h3>
+      <p>예산과 그 전 주를 비교해서 줄일 수 있었던 곳을 AI가 정리했어요.</p>
+      <button class="btn btn-ink" data-open-report="${reportWeek}">보고서 보기 ${svg("i-arrow")}</button></div>`;
+  } else if (!s.gross && !s.income) {
     html = `<div class="feature calm"><p class="kicker">처음이라면</p><h3>토스 거래내역서를 올려 볼까요</h3>
       <p>PDF를 올리면 AI가 카테고리를 나누고 친구들의 정산을 찾아요.</p>
       <button class="btn btn-ink" data-go="upload">거래내역 올리기 ${svg("i-arrow")}</button></div>`;
@@ -293,11 +307,17 @@ $("#recat-btn").addEventListener("click", async () => {
 });
 
 // ---------- 정산 ----------
-const pairHtml = (p) => `<div class="pair">
+// 받은 돈 하나가 결제 여러 개의 몫이면 결제마다 나눠 준 금액(share)을 같이 보여준다
+const pairHtml = (p) => {
+  const pays = p.payments || [p.payment];
+  const many = pays.length > 1;
+  return `<div class="pair">
   <div class="tx in"><div class="k">받은 돈 · ${md(p.incoming.occurred_at)}</div><div class="t">${esc(p.incoming.description)}</div><div class="a">+${won(p.incoming.amount)}</div></div>
   <span class="arrow">${svg("i-arrow").replace("<svg>", '<svg width="18" height="18">')}</span>
-  <div class="tx out"><div class="k">결제 · ${md(p.payment.occurred_at)}</div><div class="t">${esc(p.payment.description)}</div><div class="a">${won(p.payment.amount)}</div></div>
+  <div class="pays">${pays.map((x) => `<div class="tx out"><div class="k">결제 · ${md(x.occurred_at)}</div>
+    <div class="t">${esc(x.description)}</div><div class="a">${won(x.amount)}${many ? ` <span class="share">중 ${won(x.share)}</span>` : ""}</div></div>`).join("")}</div>
 </div>`;
+};
 
 async function loadSettlements() {
   const { settlements: s } = await refreshBadges();
@@ -318,8 +338,11 @@ async function loadSettlements() {
   $("#link-incoming").innerHTML = `<option value="">받은 돈 고르기</option>` + s.unlinked
     .map((t) => `<option value="${t.id}">${md(t.occurred_at)} ${esc(t.description)} +${won(t.amount)}</option>`).join("");
   const txns = await api(`/api/transactions?month=${state.month}`);
-  $("#link-payment").innerHTML = `<option value="">결제 고르기</option>` + txns.filter((t) => t.direction === "out")
-    .map((t) => `<option value="${t.id}">${md(t.occurred_at)} ${esc(t.description)} ${won(t.amount)}</option>`).join("");
+  const outs = txns.filter((t) => t.direction === "out" && !["송금", "제외"].includes(t.category));
+  $("#link-payments").innerHTML = outs.length ? outs.map((t) => `<label>
+      <input type="checkbox" value="${t.id}" id="pick-${t.id}">
+      <span class="d">${md(t.occurred_at)}</span><span class="n">${esc(t.description)}</span><span class="a">${won(t.amount)}</span></label>`).join("")
+    : `<div class="empty" style="padding:8px 10px">이 달의 결제가 없어요.</div>`;
 }
 
 document.addEventListener("click", async (e) => {
@@ -333,10 +356,11 @@ document.addEventListener("click", async (e) => {
 });
 
 $("#link-btn").addEventListener("click", async () => {
-  const incoming_id = Number($("#link-incoming").value), payment_id = Number($("#link-payment").value);
-  if (!incoming_id || !payment_id) return showError("받은 돈과 결제를 하나씩 골라 주세요.");
+  const incoming_id = Number($("#link-incoming").value);
+  const payment_ids = $$("#link-payments input:checked").map((i) => Number(i.value));
+  if (!incoming_id || !payment_ids.length) return showError("받은 돈 하나와 결제를 하나 이상 골라 주세요.");
   try {
-    await api("/api/settlements", { method: "POST", json: { incoming_id, payment_id } });
+    await api("/api/settlements", { method: "POST", json: { incoming_id, payment_ids } });
     await loadSettlements();
   } catch (err) { showError(err); }
 });
@@ -354,6 +378,7 @@ async function uploadFile(file) {
       ${r.proposals ? `<br>정산 후보 ${r.proposals}건을 찾았어요. <a href="#" data-go="settle">정산 확인하기</a>` : `<br><a href="#" data-go="home">홈에서 보기</a>`}</div>
       ${r.warning ? `<div class="notice warn">${esc(r.warning)}</div>` : ""}`;
     refreshBadges();
+    autoReport();
   } catch (err) {
     box.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
   } finally {
@@ -476,5 +501,6 @@ async function init() {
   setMonth(state.meta.today.slice(0, 7));
   Chart.defaults.font.family = '"IBM Plex Sans KR", system-ui, sans-serif';
   await loadHome();
+  autoReport();  // 기다리지 않는다: 보고서를 쓰는 동안에도 홈은 바로 보인다
 }
 init().catch(showError);

@@ -98,6 +98,14 @@ const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDat
 const dateOf = (s) => { const [y, m, d] = s.slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
 const plusDays = (s, n) => { const d = dateOf(s); d.setDate(d.getDate() + n); return isoOf(d); };
 const monthDays = (s) => { const d = dateOf(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+// 정산 하나가 결제 여러 개를 덮을 수 있다: [{id: 결제 id, share: 나눠 준 금액}]
+const parts = (s) => s.parts || [{ id: s.payment_id, share: byId(s.incoming_id).amount }];
+function allocate(amount, ids) {
+  const amounts = ids.map((id) => byId(id).amount), total = amounts.reduce((a, v) => a + v, 0);
+  const shares = amounts.map((a) => Math.floor((amount * a) / total));
+  shares[shares.length - 1] += amount - shares.reduce((a, v) => a + v, 0);
+  return ids.map((id, i) => ({ id, share: shares[i] }));
+}
 const needsReview = (t) => t.direction === "out" && !t.reviewed && (["송금", "기타"].includes(t.category) || t.varies);
 const settledIn = (status) => new Set(demo.settlements.filter((s) => s.status === status).map((s) => s.incoming_id));
 
@@ -106,7 +114,7 @@ function summarize(start, end, topN = 10) {
     && t.occurred_at.slice(0, 10) >= start && t.occurred_at.slice(0, 10) <= end);
   const back = (status) => {
     const m = {};
-    demo.settlements.filter((s) => s.status === status).forEach((s) => { m[s.payment_id] = (m[s.payment_id] || 0) + byId(s.incoming_id).amount; });
+    demo.settlements.filter((s) => s.status === status).forEach((s) => parts(s).forEach((x) => { m[x.id] = (m[x.id] || 0) + x.share; }));
     return m;
   };
   const conf = back("confirmed"), pend = back("pending");
@@ -173,8 +181,11 @@ function demoRoute(path, opts) {
   if (p === "/api/settlements" && method === "GET") {
     const out = { pending: [], confirmed: [] };
     demo.settlements.filter((s) => s.status !== "rejected")
-      .sort((a, b) => byId(b.payment_id).occurred_at.localeCompare(byId(a.payment_id).occurred_at))
-      .forEach((s) => out[s.status].push({ id: s.id, reason: s.reason, payment: brief(byId(s.payment_id)), incoming: brief(byId(s.incoming_id)) }));
+      .sort((a, b) => byId(b.incoming_id).occurred_at.localeCompare(byId(a.incoming_id).occurred_at))
+      .forEach((s) => {
+        const payments = parts(s).map((x) => ({ ...brief(byId(x.id)), share: x.share }));
+        out[s.status].push({ id: s.id, reason: s.reason, payment: payments[0], payments, incoming: brief(byId(s.incoming_id)) });
+      });
     const linked = new Set(demo.settlements.filter((s) => s.status !== "rejected").map((s) => s.incoming_id));
     out.unlinked = demo.txns.filter((t) => t.direction === "in" && !linked.has(t.id))
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)).map(txnJson);
@@ -193,8 +204,10 @@ function demoRoute(path, opts) {
   if (p === "/api/settlements" && method === "POST") {
     if (busy(body.incoming_id)) fail("이 입금은 이미 다른 결제의 정산으로 확정돼 있어요.");
     demo.settlements.forEach((x) => { if (x.incoming_id === body.incoming_id && x.status === "pending") x.status = "rejected"; });
+    const ids = body.payment_ids?.length ? body.payment_ids : [body.payment_id];
     const id = demo.settlements.length + 1;
-    demo.settlements.push({ id, payment_id: body.payment_id, incoming_id: body.incoming_id, status: "confirmed", reason: "직접 연결" });
+    demo.settlements.push({ id, payment_id: ids[0], parts: allocate(byId(body.incoming_id).amount, ids),
+      incoming_id: body.incoming_id, status: "confirmed", reason: "직접 연결" });
     return { id };
   }
   if (p === "/api/budgets" && method === "GET") return { ...demo.budgets };
@@ -212,6 +225,7 @@ function demoRoute(path, opts) {
       top_payments: thisWeek.top,
     };
   }
+  if (p === "/api/reports/auto") return { status: "no_ai", week_start: "2026-10-19" };
   if (p === "/api/reports" && method === "GET") return demo.reports.map((r) => ({ ...r }));
   if (p === "/api/reports" && method === "POST") {
     if (!demo.reports.some((r) => r.week_start === body.week_start)) {

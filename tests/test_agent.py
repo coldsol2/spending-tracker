@@ -65,12 +65,14 @@ def test_match_drops_payment_outside_candidates():
     cands = [{"incoming": {"id": 10, "occurred_at": t, "description": "이민수", "amount": 1},
               "payments": [{"id": 1, "occurred_at": t, "description": "고기집", "amount": 9}]}]
     llm = FakeLLM({"MatchResult": lambda _: MatchResult(matches=[
-        Match(incoming_id=10, payment_id=99, reason="x"),
-        Match(incoming_id=77, payment_id=1, reason="x"),
+        Match(incoming_id=10, payment_ids=[99], reason="x"),
+        Match(incoming_id=77, payment_ids=[1], reason="x"),
+        Match(incoming_id=10, payment_ids=[], reason="정산 아님"),
     ])})
     assert match.propose(llm, cands) == []
-    llm = FakeLLM({"MatchResult": lambda _: MatchResult(matches=[Match(incoming_id=10, payment_id=1, reason="같이 먹음")])})
-    assert match.propose(llm, cands) == [{"incoming_id": 10, "payment_id": 1, "reason": "같이 먹음"}]
+    llm = FakeLLM({"MatchResult": lambda _: MatchResult(matches=[
+        Match(incoming_id=10, payment_ids=[1, 99, 1], reason="같이 먹음")])})
+    assert match.propose(llm, cands) == [{"incoming_id": 10, "payment_ids": [1], "reason": "같이 먹음"}]
 
 
 def test_report_input_and_save(conn):

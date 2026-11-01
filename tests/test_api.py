@@ -21,7 +21,7 @@ def fake_llm():
                                      for m in payload["merchants"]])
 
     def matches(cands):
-        return MatchResult(matches=[Match(incoming_id=c["incoming"]["id"], payment_id=c["payments"][0]["id"],
+        return MatchResult(matches=[Match(incoming_id=c["incoming"]["id"], payment_ids=[c["payments"][0]["id"]],
                                           reason="결제 직후 입금") for c in cands])
     return FakeLLM({"CategoryResult": categories, "MatchResult": matches})
 

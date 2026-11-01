@@ -17,17 +17,23 @@ CREATE TABLE IF NOT EXISTS transactions (
     kind TEXT,                          -- 은행이 적은 거래 유형 (체크카드결제, 출금 등)
     reviewed INTEGER NOT NULL DEFAULT 0 -- 사용자가 카테고리를 직접 정했으면 1
 );
+-- 입금 하나가 여러 결제의 몫일 수 있다(1차 식당 + 2차 카페). 그때는 결제마다 한 줄씩 두고
+-- group_id로 묶으며, amount에 그 결제에 나눠 준 금액을 적는다. amount가 NULL이면 입금 전액.
 CREATE TABLE IF NOT EXISTS settlements (
     id INTEGER PRIMARY KEY,
     payment_id INTEGER NOT NULL REFERENCES transactions(id),
     incoming_id INTEGER NOT NULL REFERENCES transactions(id),
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'confirmed', 'rejected')),
-    reason TEXT
+    reason TEXT,
+    amount INTEGER,
+    group_id INTEGER
 );
--- 하나의 입금은 최대 하나의 결제에만 확정된다
-CREATE UNIQUE INDEX IF NOT EXISTS one_confirmed_per_incoming
-    ON settlements(incoming_id) WHERE status = 'confirmed';
+CREATE UNIQUE INDEX IF NOT EXISTS settlement_pair ON settlements(incoming_id, payment_id);
+-- PDF의 예금주처럼 내 이름: 이 이름과 오간 돈은 내 계좌끼리의 이동이다
+CREATE TABLE IF NOT EXISTS account_owners (
+    name TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS merchant_categories (
     merchant TEXT PRIMARY KEY,
     category TEXT NOT NULL,
@@ -52,6 +58,7 @@ NEW_COLUMNS = {
     "transactions": {"kind": "TEXT", "reviewed": "INTEGER NOT NULL DEFAULT 0"},
     "merchant_categories": {"source": "TEXT NOT NULL DEFAULT 'ai'", "confident": "INTEGER NOT NULL DEFAULT 1",
                             "varies": "INTEGER NOT NULL DEFAULT 0"},
+    "settlements": {"amount": "INTEGER", "group_id": "INTEGER"},
 }
 # 예전 카테고리 이름 → 새 이름 (2026-10-31 카테고리 개편)
 RENAMED_CATEGORIES = {"카페": "유흥", "구독": "구독료", "교통": "교통비", "의료": "생활"}
@@ -63,6 +70,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         for name, decl in columns.items():
             if name not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+    # 예전에는 입금 하나를 결제 하나에만 확정할 수 있었다 (2026-11-01 여러 결제 정산 도입)
+    conn.execute("DROP INDEX IF EXISTS one_confirmed_per_incoming")
     for old, new in RENAMED_CATEGORIES.items():
         conn.execute("UPDATE transactions SET category = ? WHERE category = ?", (new, old))
         conn.execute("UPDATE merchant_categories SET category = ? WHERE category = ?", (new, old))

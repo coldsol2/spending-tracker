@@ -7,7 +7,7 @@ FONT = Path("C:/Windows/Fonts/malgun.ttf")
 
 
 def make_statement_pdf(rows: list[list[str]], password: str | None = None, borders: bool = True,
-                       rows_per_page: int = 100) -> bytes:
+                       rows_per_page: int = 100, owner: str | None = None) -> bytes:
     pdf = FPDF()
     pdf.add_font("kr", fname=str(FONT))
     pdf.set_font("kr", size=8)
@@ -15,6 +15,8 @@ def make_statement_pdf(rows: list[list[str]], password: str | None = None, borde
     for start in range(0, max(1, len(body)), rows_per_page):
         pdf.add_page()
         pdf.cell(0, 10, "토스뱅크 거래내역서", new_x="LMARGIN", new_y="NEXT")
+        if owner:
+            pdf.cell(0, 6, f"예금주 {owner}", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, "조회기간 2026.10.01 ~ 2026.10.31", new_x="LMARGIN", new_y="NEXT")
         with pdf.table(borders_layout="ALL" if borders else "NONE", first_row_as_headings=False) as table:
             for r in [header] + body[start:start + rows_per_page]:

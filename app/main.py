@@ -21,8 +21,9 @@ class CategoryIn(BaseModel):
 
 
 class LinkIn(BaseModel):
-    payment_id: int
     incoming_id: int
+    payment_ids: list[int] = []  # 여러 결제에 나눠 연결
+    payment_id: int | None = None  # 결제 하나 (예전 형식)
 
 
 class ReportIn(BaseModel):
@@ -90,7 +91,8 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
 
     @app.post("/api/settlements")
     def link(body: LinkIn, conn=Depends(get_conn)):
-        return {"id": guard(service.link_settlement, conn, body.payment_id, body.incoming_id)}
+        ids = body.payment_ids or ([body.payment_id] if body.payment_id else [])
+        return {"id": guard(service.link_settlement, conn, ids, body.incoming_id)}
 
     @app.post("/api/settlements/{sid}/confirm")
     def confirm(sid: int, conn=Depends(get_conn)):
@@ -118,6 +120,10 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
     @app.get("/api/reports")
     def reports(conn=Depends(get_conn)):
         return report.list_reports(conn)
+
+    @app.post("/api/reports/auto")
+    def auto_report(today: date | None = None, conn=Depends(get_conn)):
+        return report.ensure_last_week(conn, llm_factory(), today or date.today())
 
     @app.post("/api/reports")
     def create_report(body: ReportIn, conn=Depends(get_conn)):

@@ -124,9 +124,16 @@ def parse_text_lines(lines: list[str]) -> list[Txn]:
     return txns
 
 
-def parse_pdf(data: bytes, password: str | None, rows_to_txns: RowsToTxns,
-              ai_extract: AiExtract | None = None) -> list[Txn]:
-    rows, text = read_pdf(data, password)
+OWNER_RE = re.compile(r"예금주\s*[:：]?\s*([^\s:：]+)")
+
+
+def find_owner(text: str) -> str | None:
+    """거래내역서 머리글의 '예금주 홍길동'에서 이름을 찾는다."""
+    m = OWNER_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _parse(rows, text, rows_to_txns, ai_extract) -> list[Txn]:
     if rows:
         try:
             return rows_to_txns(rows)
@@ -140,3 +147,13 @@ def parse_pdf(data: bytes, password: str | None, rows_to_txns: RowsToTxns,
     if ai_extract is not None:
         return ai_extract(text)
     raise ValueError("PDF에서 거래 표를 찾지 못했어요. API 키를 설정하면 AI가 대신 읽어볼 수 있어요.")
+
+
+def parse_pdf(data: bytes, password: str | None, rows_to_txns: RowsToTxns,
+              ai_extract: AiExtract | None = None) -> list[Txn]:
+    rows, text = read_pdf(data, password)
+    txns = _parse(rows, text, rows_to_txns, ai_extract)
+    owner = find_owner(text)
+    for t in txns:
+        t.owner = owner is not None and t.description.strip() == owner
+    return txns

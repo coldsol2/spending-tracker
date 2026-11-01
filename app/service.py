@@ -35,10 +35,14 @@ def import_file(conn: sqlite3.Connection, filename: str, data: bytes, llm, passw
     except LLMError as e:
         raise ValueError(f"AI가 PDF를 읽지 못했어요. ({e})") from e
 
-    internal = [t for t in txns if settle.is_internal(t.description)]
-    txns = [t for t in txns if not settle.is_internal(t.description)]
+    for name in {t.description.strip() for t in txns if t.owner}:
+        conn.execute("INSERT OR IGNORE INTO account_owners(name) VALUES (?)", (name,))
+    owners = owner_names(conn)
+    is_mine = lambda t: settle.is_internal(t.description) or t.description.strip() in owners  # noqa: E731
+    internal = [t for t in txns if is_mine(t)]
+    txns = [t for t in txns if not is_mine(t)]
     if internal:
-        warnings.append(f"내 계좌끼리 오간 돈(비상금 등) {len(internal)}건은 수입·지출에서 뺐어요.")
+        warnings.append(f"내 계좌끼리 오간 돈(비상금·환전·내 이름 계좌) {len(internal)}건은 수입·지출에서 뺐어요.")
 
     added = 0
     for t in txns:
@@ -77,6 +81,10 @@ def import_file(conn: sqlite3.Connection, filename: str, data: bytes, llm, passw
 REFUND_REASON = "결제 취소"
 
 
+def owner_names(conn: sqlite3.Connection) -> set[str]:
+    return {r["name"] for r in conn.execute("SELECT name FROM account_owners")}
+
+
 def link_refunds(conn: sqlite3.Connection, refunds: list) -> None:
     """결제 취소 입금을 같은 가맹점의 직전 결제에 자동으로 확정 연결한다.
     결제 하나에는 취소 하나만 붙인다 (택시 가승인처럼 결제·취소가 여러 번 반복되는 경우)."""
@@ -109,32 +117,50 @@ def categorize_pending(conn: sqlite3.Connection, llm) -> None:
 
 
 def propose_settlements(conn: sqlite3.Connection, llm) -> int:
-    """아직 정산 판단을 받은 적 없는 입금에 대해 Claude의 매칭 제안을 pending으로 저장한다."""
-    payments = [_tx(r) for r in conn.execute("SELECT * FROM transactions WHERE direction = 'out'")]
+    """아직 정산 판단을 받은 적 없는 입금에 대해 Claude의 매칭 제안을 pending으로 저장한다.
+    후보 결제에서 송금·제외 카테고리와 이미 취소된 결제는 뺀다."""
+    payments = [_tx(r) for r in conn.execute(
+        "SELECT * FROM transactions WHERE direction = 'out' AND COALESCE(category, '') NOT IN ('송금', ?) "
+        "AND id NOT IN (SELECT payment_id FROM settlements WHERE status = 'confirmed' AND reason = ?)",
+        (cat_agent.EXCLUDED, REFUND_REASON))]
     incomings = [_tx(r) for r in conn.execute(
         "SELECT * FROM transactions WHERE direction = 'in' "
         "AND id NOT IN (SELECT incoming_id FROM settlements)")]
     proposals = match.propose(llm, settle.find_candidates(payments, incomings))
-    count = 0
     for p in proposals:
-        if p["payment_id"] is None:
-            continue
-        conn.execute("INSERT INTO settlements(payment_id, incoming_id, status, reason) VALUES (?, ?, 'pending', ?)",
-                     (p["payment_id"], p["incoming_id"], p["reason"]))
-        count += 1
+        _insert_group(conn, p["incoming_id"], p["payment_ids"], "pending", p["reason"])
     conn.commit()
-    return count
+    return len(proposals)
+
+
+def _insert_group(conn, incoming_id: int, payment_ids: list[int], status: str, reason: str) -> int:
+    """입금 하나를 결제 여러 개에 나눠 연결한다. 결제가 하나면 입금 전액(amount NULL)."""
+    amounts = {r["id"]: r["amount"] for r in conn.execute(
+        f"SELECT id, amount FROM transactions WHERE id IN ({','.join('?' * len(payment_ids))})", payment_ids)}
+    incoming = conn.execute("SELECT amount FROM transactions WHERE id = ?", (incoming_id,)).fetchone()["amount"]
+    shares = settle.allocate(incoming, [amounts[p] for p in payment_ids]) if len(payment_ids) > 1 else [None]
+    group_id = None
+    for payment_id, share in zip(payment_ids, shares):
+        cur = conn.execute(
+            "INSERT INTO settlements(payment_id, incoming_id, status, reason, amount, group_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (payment_id, incoming_id, status, reason, share, group_id))
+        if group_id is None:
+            group_id = cur.lastrowid
+            conn.execute("UPDATE settlements SET group_id = ? WHERE id = ?", (group_id, group_id))
+    return group_id
 
 
 # ---- 집계 ----
 
 def _settled(conn, status: str, payment_ids: list[int]) -> list[tuple[int, int]]:
+    """(결제 id, 그 결제에 돌아온 금액). 여러 결제로 나눈 입금은 나눠 준 금액만 센다."""
     if not payment_ids:
         return []
     marks = ",".join("?" * len(payment_ids))
     rows = conn.execute(
-        f"SELECT s.payment_id, i.amount FROM settlements s JOIN transactions i ON i.id = s.incoming_id "
-        f"WHERE s.status = ? AND s.payment_id IN ({marks})", (status, *payment_ids))
+        f"SELECT s.payment_id, COALESCE(s.amount, i.amount) AS amount FROM settlements s "
+        f"JOIN transactions i ON i.id = s.incoming_id WHERE s.status = ? AND s.payment_id IN ({marks})",
+        (status, *payment_ids))
     return [(r["payment_id"], r["amount"]) for r in rows]
 
 
@@ -234,20 +260,29 @@ def recategorize(conn: sqlite3.Connection, llm) -> int:
 
 # ---- 정산 ----
 
+# 정산은 묶음(group) 단위로 보여주고 확정·거절한다. 예전 기록은 group_id가 없으니 자기 id가 묶음 id다.
+GROUP = "COALESCE(s.group_id, s.id)"
+
+
 def list_settlements(conn: sqlite3.Connection) -> dict:
     rows = conn.execute(
-        "SELECT s.id, s.status, s.reason, "
+        f"SELECT {GROUP} AS gid, s.status, s.reason, COALESCE(s.amount, i.amount) AS share, "
         "p.id AS p_id, p.occurred_at AS p_at, p.description AS p_desc, p.amount AS p_amount, "
         "i.id AS i_id, i.occurred_at AS i_at, i.description AS i_desc, i.amount AS i_amount "
         "FROM settlements s JOIN transactions p ON p.id = s.payment_id JOIN transactions i ON i.id = s.incoming_id "
-        "WHERE s.status != 'rejected' ORDER BY p.occurred_at DESC, i.occurred_at")
-    out = {"pending": [], "confirmed": []}
+        "WHERE s.status != 'rejected' ORDER BY i.occurred_at DESC, p.occurred_at")
+    groups: dict[int, dict] = {}
     for r in rows:
-        out[r["status"]].append({
-            "id": r["id"], "reason": r["reason"],
-            "payment": {"id": r["p_id"], "occurred_at": r["p_at"][:16], "description": r["p_desc"], "amount": r["p_amount"]},
+        g = groups.setdefault(r["gid"], {
+            "id": r["gid"], "status": r["status"], "reason": r["reason"], "payments": [],
             "incoming": {"id": r["i_id"], "occurred_at": r["i_at"][:16], "description": r["i_desc"], "amount": r["i_amount"]},
         })
+        g["payments"].append({"id": r["p_id"], "occurred_at": r["p_at"][:16], "description": r["p_desc"],
+                              "amount": r["p_amount"], "share": r["share"]})
+    out = {"pending": [], "confirmed": []}
+    for g in groups.values():
+        g["payment"] = g["payments"][0]
+        out[g.pop("status")].append(g)
     return out
 
 
@@ -259,43 +294,54 @@ def unlinked_incomings(conn: sqlite3.Connection) -> list[dict]:
     return [_tx_json(_tx(r)) for r in rows]
 
 
-def _ensure_incoming_free(conn, incoming_id: int, except_id: int | None = None) -> None:
-    row = conn.execute("SELECT id FROM settlements WHERE incoming_id = ? AND status = 'confirmed' AND id IS NOT ?",
-                       (incoming_id, except_id)).fetchone()
+def _ensure_incoming_free(conn, incoming_id: int, except_group: int | None = None) -> None:
+    row = conn.execute(f"SELECT 1 FROM settlements s WHERE s.incoming_id = ? AND s.status = 'confirmed' "
+                       f"AND {GROUP} IS NOT ?", (incoming_id, except_group)).fetchone()
     if row:
         raise ConflictError("이 입금은 이미 다른 결제의 정산으로 확정돼 있어요.")
 
 
-def confirm_settlement(conn: sqlite3.Connection, settlement_id: int) -> None:
-    row = conn.execute("SELECT * FROM settlements WHERE id = ?", (settlement_id,)).fetchone()
+def _group_incoming(conn, group_id: int) -> int:
+    row = conn.execute(f"SELECT incoming_id FROM settlements s WHERE {GROUP} = ?", (group_id,)).fetchone()
     if row is None:
         raise LookupError("정산 제안을 찾을 수 없어요.")
-    _ensure_incoming_free(conn, row["incoming_id"], settlement_id)
-    conn.execute("UPDATE settlements SET status = 'confirmed' WHERE id = ?", (settlement_id,))
-    conn.execute("UPDATE settlements SET status = 'rejected' WHERE incoming_id = ? AND id != ? AND status = 'pending'",
-                 (row["incoming_id"], settlement_id))
+    return row["incoming_id"]
+
+
+def confirm_settlement(conn: sqlite3.Connection, group_id: int) -> None:
+    incoming_id = _group_incoming(conn, group_id)
+    _ensure_incoming_free(conn, incoming_id, group_id)
+    conn.execute(f"UPDATE settlements AS s SET status = 'confirmed' WHERE {GROUP} = ?", (group_id,))
+    conn.execute(f"UPDATE settlements AS s SET status = 'rejected' WHERE s.incoming_id = ? AND {GROUP} != ? "
+                 "AND s.status = 'pending'", (incoming_id, group_id))
     conn.commit()
 
 
-def reject_settlement(conn: sqlite3.Connection, settlement_id: int) -> None:
-    cur = conn.execute("UPDATE settlements SET status = 'rejected' WHERE id = ?", (settlement_id,))
-    if cur.rowcount == 0:
-        raise LookupError("정산 제안을 찾을 수 없어요.")
+def reject_settlement(conn: sqlite3.Connection, group_id: int) -> None:
+    _group_incoming(conn, group_id)
+    conn.execute(f"UPDATE settlements AS s SET status = 'rejected' WHERE {GROUP} = ?", (group_id,))
     conn.commit()
 
 
-def link_settlement(conn: sqlite3.Connection, payment_id: int, incoming_id: int) -> int:
-    pay = conn.execute("SELECT direction FROM transactions WHERE id = ?", (payment_id,)).fetchone()
+def link_settlement(conn: sqlite3.Connection, payment_ids: int | list[int], incoming_id: int,
+                    reason: str = "직접 연결") -> int:
+    """받은 돈 하나를 결제 하나 또는 여러 개에 직접 연결해 바로 확정한다."""
+    payment_ids = [payment_ids] if isinstance(payment_ids, int) else list(dict.fromkeys(payment_ids))
+    marks = ",".join("?" * len(payment_ids))
+    outs = conn.execute(f"SELECT COUNT(*) FROM transactions WHERE direction = 'out' AND id IN ({marks})",
+                        payment_ids).fetchone()[0]
     inc = conn.execute("SELECT direction FROM transactions WHERE id = ?", (incoming_id,)).fetchone()
-    if not pay or pay["direction"] != "out" or not inc or inc["direction"] != "in":
-        raise ValueError("결제(출금)와 입금을 하나씩 골라 주세요.")
+    if not payment_ids or outs != len(payment_ids) or not inc or inc["direction"] != "in":
+        raise ValueError("받은 돈 하나와 결제(출금)를 골라 주세요.")
     _ensure_incoming_free(conn, incoming_id)
     conn.execute("UPDATE settlements SET status = 'rejected' WHERE incoming_id = ? AND status = 'pending'",
                  (incoming_id,))
-    cur = conn.execute("INSERT INTO settlements(payment_id, incoming_id, status, reason) "
-                       "VALUES (?, ?, 'confirmed', '직접 연결')", (payment_id, incoming_id))
+    # 예전에 거절했던 같은 짝은 지우고 새로 만든다 (짝마다 한 줄만 둘 수 있다)
+    conn.execute(f"DELETE FROM settlements WHERE incoming_id = ? AND status = 'rejected' AND payment_id IN ({marks})",
+                 (incoming_id, *payment_ids))
+    group_id = _insert_group(conn, incoming_id, payment_ids, "confirmed", reason)
     conn.commit()
-    return cur.lastrowid
+    return group_id
 
 
 # ---- 예산 ----
