@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 from . import settle, stats
 from .agent import categorize as cat_agent
-from .agent import extract, match
+from .agent import extract, guess, match
 from .agent.client import LLMError, column_mapper
 from .parser import parse_file
 
@@ -75,6 +75,10 @@ def import_file(conn: sqlite3.Connection, filename: str, data: bytes, llm, passw
             proposals = propose_settlements(conn, llm)
         except LLMError as e:
             warnings.append(f"정산 제안 실패: {e}")
+        try:
+            guess_pending(conn, llm)  # 정산 제안 다음에: 친구 정산도 추측 단서가 된다
+        except LLMError as e:
+            warnings.append(f"거래별 추측 실패: {e}")
 
     return {"added": added, "duplicates": len(txns) - added, "proposals": proposals,
             "warning": " ".join(warnings) or None}
@@ -261,11 +265,21 @@ def recategorize(conn: sqlite3.Connection, llm) -> int:
         raise LLMError(NO_KEY_WARNING)
     conn.execute("DELETE FROM merchant_categories WHERE source = 'ai'")
     cur = conn.execute(
-        "UPDATE transactions SET category = NULL WHERE direction = 'out' AND reviewed = 0 "
+        "UPDATE transactions SET category = NULL, ai_guess = NULL, ai_confidence = NULL, ai_reason = NULL "
+        "WHERE direction = 'out' AND reviewed = 0 "
         "AND description NOT IN (SELECT merchant FROM merchant_categories WHERE source = 'user')")
     conn.commit()
     categorize_pending(conn, llm)
+    guess_pending(conn, llm)
     return cur.rowcount
+
+
+def guess_pending(conn: sqlite3.Connection, llm) -> int:
+    """가게 이름만으로 정하지 못한 거래(분류 확인 목록)를 거래 하나씩 앞뒤 상황까지 보고 추측한다."""
+    ids = [r["id"] for r in conn.execute(
+        "SELECT t.id FROM transactions t LEFT JOIN merchant_categories m ON m.merchant = t.description "
+        f"WHERE {NEEDS_REVIEW} AND t.ai_guess IS NULL")]
+    return guess.apply(conn, llm, ids)
 
 
 # ---- 정산 ----

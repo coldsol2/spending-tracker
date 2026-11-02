@@ -21,7 +21,8 @@
   <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
-  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-down"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9.5 14.5 12 12l2.5 2.5"/></symbol>
 </svg>
 
@@ -37,8 +38,11 @@
     </header>
 
     <div class="hero">
-      <label class="month-pill"><span id="month-label">이번 달</span><svg><use href="#i-down"/></svg>
-        <input type="month" id="month" aria-label="볼 달 선택"></label>
+      <div class="month-nav">
+        <button data-month-step="-1" aria-label="이전 달"><svg><use href="#i-back"/></svg></button>
+        <span class="month-label" aria-live="polite">이번 달</span>
+        <button data-month-step="1" aria-label="다음 달"><svg><use href="#i-next"/></svg></button>
+      </div>
       <div class="hero-amount">
         <div class="label">실제로 쓴 돈</div>
         <div class="big"><b id="total" class="num">0</b><span>원</span></div>
@@ -79,8 +83,11 @@
   <section class="view" id="view-txns">
     <header class="topbar">
       <div><h1>거래내역</h1><p class="sub" id="txns-sub"></p></div>
-      <label class="month-pill"><span class="month-label-copy">이번 달</span><svg><use href="#i-down"/></svg>
-        <input type="month" class="month-copy" aria-label="볼 달 선택"></label>
+      <div class="month-nav">
+        <button data-month-step="-1" aria-label="이전 달"><svg><use href="#i-back"/></svg></button>
+        <span class="month-label" aria-live="polite">이번 달</span>
+        <button data-month-step="1" aria-label="다음 달"><svg><use href="#i-next"/></svg></button>
+      </div>
     </header>
 
     <div class="card" id="review-card">

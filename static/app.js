@@ -22,6 +22,7 @@ const CATS = {
   입금: { c: "#ece4fb", e: "💜" },
 };
 const cat = (name) => CATS[name || "기타"] || CATS.기타;
+const CONFIDENCE = { high: "확실해요", medium: "그럴듯해요", low: "단서가 부족해요" };
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
 const state = { meta: null, month: null, view: "home", prev: "home", reports: [], week: null, chart: null, home: null, autoReport: null };
@@ -66,20 +67,24 @@ document.addEventListener("click", (e) => {
 });
 
 function setMonth(value) {
-  if (!value) return;
   state.month = value;
   const [y, m] = value.split("-").map(Number);
-  const label = value === state.meta.today.slice(0, 7) ? "이번 달" : `${y}년 ${m}월`;
-  $("#month").value = value;
-  $("#month-label").textContent = label;
-  $$(".month-copy").forEach((i) => (i.value = value));
-  $$(".month-label-copy").forEach((s) => (s.textContent = label));
+  const current = value === state.meta.today.slice(0, 7);
+  $$(".month-label").forEach((s) => (s.textContent = current ? "이번 달" : `${y}년 ${m}월`));
+  // 아직 오지 않은 달은 볼 게 없으니 '다음 달'은 이번 달에서 멈춘다
+  $$('[data-month-step="1"]').forEach((b) => b.classList.toggle("at-end", current));
 }
-document.addEventListener("change", (e) => {
-  if (e.target.id === "month" || e.target.classList.contains("month-copy")) {
-    setMonth(e.target.value);
-    loaders[state.view]().catch(showError);
-  }
+
+// 이전·다음 달 버튼. 홈과 거래 화면이 같은 달을 보여준다
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-month-step]");
+  if (!b) return;
+  const [y, m] = state.month.split("-").map(Number);
+  const d = new Date(y, m - 1 + Number(b.dataset.monthStep), 1);
+  const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  if (next > state.meta.today.slice(0, 7)) return;
+  setMonth(next);
+  loaders[state.view]().catch(showError);
 });
 
 // ---------- 배지 ----------
@@ -251,6 +256,12 @@ async function loadTransactions() {
         <div class="body"><div class="title">${esc(t.description)}<span class="scope">${t.varies ? "이 거래만" : "같은 가게 전체"}</span></div>
           <div class="meta">${esc(t.occurred_at.slice(0, 16).replace(/-/g, "."))}${t.kind ? ` · ${esc(t.kind)}` : ""}</div></div>
         <div class="right"><div class="amt">${won(t.amount)}</div></div></div></div>
+      ${t.ai_guess ? `<div class="guess guess-${t.ai_confidence}">
+        <div class="g-body"><div class="g-head">AI 추측 · <b>${cat(t.ai_guess).e} ${esc(t.ai_guess)}</b>
+          <span class="g-conf">${CONFIDENCE[t.ai_confidence] || ""}</span></div>
+          <div class="g-reason">${esc(t.ai_reason || "")}</div></div>
+        ${t.ai_confidence !== "low" ? `<button class="btn btn-ink" data-review="${t.id}" data-cat="${esc(t.ai_guess)}">맞아요</button>` : ""}
+      </div>` : ""}
       <div class="chips">${state.meta.categories.map((c) =>
         `<button data-review="${t.id}" data-cat="${c}" class="${c === t.category ? "current" : ""}">${cat(c).e} ${c}</button>`).join("")}</div>
     </div>`).join("") + (review.length > 30 ? `<div class="empty">나머지 ${review.length - 30}건은 위의 것을 정하면 이어서 보여요.</div>` : "");

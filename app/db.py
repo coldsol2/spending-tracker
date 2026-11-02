@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     category TEXT,
     source_hash TEXT NOT NULL UNIQUE,
     kind TEXT,                          -- 은행이 적은 거래 유형 (체크카드결제, 출금 등)
-    reviewed INTEGER NOT NULL DEFAULT 0 -- 사용자가 카테고리를 직접 정했으면 1
+    reviewed INTEGER NOT NULL DEFAULT 0, -- 사용자가 카테고리를 직접 정했으면 1
+    ai_guess TEXT,                      -- 거래 하나를 앞뒤 상황까지 보고 AI가 추측한 카테고리
+    ai_confidence TEXT,                 -- high | medium | low
+    ai_reason TEXT                      -- 추측 근거 한 문장
 );
 -- 입금 하나가 여러 결제의 몫일 수 있다(1차 식당 + 2차 카페). 그때는 결제마다 한 줄씩 두고
 -- group_id로 묶으며, amount에 그 결제에 나눠 준 금액을 적는다. amount가 NULL이면 입금 전액.
@@ -59,7 +62,8 @@ CREATE TABLE IF NOT EXISTS reports (
 
 # 예전 버전 DB에 없던 열
 NEW_COLUMNS = {
-    "transactions": {"kind": "TEXT", "reviewed": "INTEGER NOT NULL DEFAULT 0"},
+    "transactions": {"kind": "TEXT", "reviewed": "INTEGER NOT NULL DEFAULT 0",
+                     "ai_guess": "TEXT", "ai_confidence": "TEXT", "ai_reason": "TEXT"},
     "merchant_categories": {"source": "TEXT NOT NULL DEFAULT 'ai'", "confident": "INTEGER NOT NULL DEFAULT 1",
                             "varies": "INTEGER NOT NULL DEFAULT 0"},
     "settlements": {"amount": "INTEGER", "group_id": "INTEGER"},

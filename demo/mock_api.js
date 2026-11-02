@@ -74,6 +74,18 @@ const demo = {
 ## 다음 주 목표
 커피는 주 2회까지만, 남는 돈은 비상금으로 옮겨 보세요.` }],
 };
+// 분류 확인 화면의 AI 추측 예시 (실제 앱은 앞뒤 거래·친구 정산·사용자 선택을 보고 만든다)
+const DEMO_GUESSES = {
+  김철수: ["술", "medium", "판교포차 술자리가 있던 주의 저녁 9시대 친구 송금이라 술값 정산으로 보여요."],
+  카카오페이: ["식비", "medium", "평일 점심시간의 1만 원대 결제라 점심 식사로 보여요."],
+  토스페이: ["편의점", "low", "주변에 다른 결제가 없어 금액대만 보고 추측했어요."],
+};
+demo.txns.forEach((t) => {
+  const g = DEMO_GUESSES[t.description];
+  if (!g || t.direction !== "out") return;
+  [t.ai_guess, t.ai_confidence, t.ai_reason] = g;
+  if (g[1] !== "low") t.category = g[0];
+});
 const byId = (id) => demo.txns.find((t) => t.id === id);
 const findTxn = (at, desc) => demo.txns.find((t) => t.occurred_at.startsWith(at) && t.description === desc).id;
 // 고기집 정산은 이미 확정, 나머지는 AI 제안 대기
