@@ -311,11 +311,31 @@ def list_settlements(conn: sqlite3.Connection) -> dict:
 
 
 def unlinked_incomings(conn: sqlite3.Connection) -> list[dict]:
+    """직접 연결할 수 있는 받은 돈. 캐시백·이자·급여처럼 정산일 수 없는 돈은 뺀다."""
     rows = conn.execute(
         "SELECT * FROM transactions WHERE direction = 'in' AND id NOT IN "
         "(SELECT incoming_id FROM settlements WHERE status IN ('pending', 'confirmed')) "
         "ORDER BY occurred_at DESC LIMIT 200")
-    return [_tx_json(_tx(r)) for r in rows]
+    return [_tx_json(_tx(r)) for r in rows
+            if not settle.is_excluded(r["description"]) and not settle.is_excluded(r["kind"] or "")]
+
+
+def payments_near(conn: sqlite3.Connection, incoming_id: int, limit: int = 6) -> list[dict]:
+    """직접 연결할 때 고를 결제: 받은 돈 14일 전 ~ 2일 뒤의 결제 중 가까운 것 몇 개.
+    송금·제외 카테고리와 이미 취소된 결제는 뺀다."""
+    inc = conn.execute("SELECT occurred_at FROM transactions WHERE id = ? AND direction = 'in'",
+                       (incoming_id,)).fetchone()
+    if inc is None:
+        raise LookupError("받은 돈을 찾을 수 없어요.")
+    at = datetime.fromisoformat(inc["occurred_at"])
+    rows = conn.execute(
+        f"SELECT * FROM transactions WHERE direction = 'out' AND {in_period()} "
+        "AND COALESCE(category, '') NOT IN ('송금', ?) "
+        "AND id NOT IN (SELECT payment_id FROM settlements WHERE status = 'confirmed' AND reason = ?)",
+        ((at - timedelta(days=14)).isoformat(sep=" "), (at + timedelta(days=2)).isoformat(sep=" "),
+         cat_agent.EXCLUDED, REFUND_REASON)).fetchall()
+    near = sorted((_tx(r) for r in rows), key=lambda p: abs(p["occurred_at"] - at))[:limit]
+    return [_tx_json(p) for p in sorted(near, key=lambda p: p["occurred_at"], reverse=True)]
 
 
 def _ensure_incoming_free(conn, incoming_id: int, except_group: int | None = None) -> None:

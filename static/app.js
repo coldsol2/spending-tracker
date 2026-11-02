@@ -348,13 +348,28 @@ async function loadSettlements() {
 
   $("#link-incoming").innerHTML = `<option value="">받은 돈 고르기</option>` + s.unlinked
     .map((t) => `<option value="${t.id}">${md(t.occurred_at)} ${esc(t.description)} +${won(t.amount)}</option>`).join("");
-  const txns = await api(`/api/transactions?month=${state.month}`);
-  const outs = txns.filter((t) => t.direction === "out" && !["송금", "제외"].includes(t.category));
-  $("#link-payments").innerHTML = outs.length ? outs.map((t) => `<label>
-      <input type="checkbox" value="${t.id}" id="pick-${t.id}">
-      <span class="d">${md(t.occurred_at)}</span><span class="n">${esc(t.description)}</span><span class="a">${won(t.amount)}</span></label>`).join("")
-    : `<div class="empty" style="padding:8px 10px">이 달의 결제가 없어요.</div>`;
+  $("#link-step").hidden = true;
 }
+
+// 받은 돈을 고르면 그 무렵(2주 전 ~ 이틀 뒤) 결제 몇 개만 카드로 보여준다
+$("#link-incoming").addEventListener("change", async (e) => {
+  const step = $("#link-step");
+  if (!e.target.value) { step.hidden = true; return; }
+  try {
+    const pays = await api(`/api/settlements/candidates?incoming_id=${e.target.value}`);
+    $("#link-payments").innerHTML = pays.length ? pays.map((t) => `<button type="button" class="pick" data-pick="${t.id}" aria-pressed="false">
+        <span class="em" style="--c:${cat(t.category).c}">${cat(t.category).e}</span>
+        <span class="body"><span class="t">${esc(t.description)}</span><span class="d">${esc(t.occurred_at.slice(5, 16).replace("-", ".").replace("-", "."))}</span></span>
+        <span class="a">${won(t.amount)}</span></button>`).join("")
+      : `<div class="empty">그 무렵 결제가 없어요.</div>`;
+    step.hidden = false;
+  } catch (err) { showError(err); }
+});
+
+$("#link-payments").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (b) b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
+});
 
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-confirm],[data-reject]");
@@ -368,7 +383,7 @@ document.addEventListener("click", async (e) => {
 
 $("#link-btn").addEventListener("click", async () => {
   const incoming_id = Number($("#link-incoming").value);
-  const payment_ids = $$("#link-payments input:checked").map((i) => Number(i.value));
+  const payment_ids = $$('#link-payments [aria-pressed="true"]').map((b) => Number(b.dataset.pick));
   if (!incoming_id || !payment_ids.length) return showError("받은 돈 하나와 결제를 하나 이상 골라 주세요.");
   try {
     await api("/api/settlements", { method: "POST", json: { incoming_id, payment_ids } });

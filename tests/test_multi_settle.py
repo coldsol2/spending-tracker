@@ -106,6 +106,29 @@ def test_account_owner_and_exchange_transfers_are_skipped(conn):
     assert service.import_file(conn, "x.csv", csv, llm=None)["added"] == 0
 
 
+def test_payments_near_a_transfer_for_manual_linking(conn):
+    add_in(conn, "이민수", 10000, "2026-10-20 12:00:00", h="in")
+    add_out(conn, "아주 옛날", 50000, "2026-10-05 12:00:00", category="식비", h="old")      # 15일 전: 빠짐
+    add_out(conn, "고깃집", 40000, "2026-10-19 19:00:00", category="식비", h="meat")
+    add_out(conn, "친구", 30000, "2026-10-19 20:00:00", category="송금", h="friend")       # 송금: 빠짐
+    add_out(conn, "카페", 9000, "2026-10-21 15:00:00", category="유흥", h="cafe")
+    add_out(conn, "나중", 9000, "2026-10-23 12:00:00", category="식비", h="late")          # 3일 뒤: 빠짐
+    add_out(conn, "쿠팡이츠", 20000, "2026-10-18 10:00:00", category="식비", h="c1")
+    add_in(conn, "쿠팡이츠", 20000, "2026-10-18 10:01:00", kind="체크카드결제", h="c2")
+    conn.execute("INSERT INTO settlements(payment_id, incoming_id, status, reason) VALUES (?, ?, 'confirmed', ?)",
+                 (tid(conn, "c1"), tid(conn, "c2"), service.REFUND_REASON))                  # 취소된 결제: 빠짐
+    conn.commit()
+    near = service.payments_near(conn, tid(conn, "in"))
+    assert [p["description"] for p in near] == ["카페", "고깃집"]  # 최근 것부터
+    assert len(service.payments_near(conn, tid(conn, "in"), limit=1)) == 1
+    with pytest.raises(LookupError):
+        service.payments_near(conn, tid(conn, "meat"))
+    # 받은 돈 목록에는 친구가 보낸 돈만: 캐시백·이자는 빠진다
+    add_in(conn, "체크카드 복권 당첨", 10, "2026-10-20 13:00:00", kind="캐시백", h="cb")
+    add_in(conn, "토스뱅크", 12, "2026-10-20 14:00:00", kind="이자입금", h="int")
+    assert [t["description"] for t in service.unlinked_incomings(conn)] == ["이민수"]
+
+
 def test_find_owner():
     assert find_owner("거래내역서\n예금주 홍길동\n계좌번호 1000-0000") == "홍길동"
     assert find_owner("예금주: 김철수") == "김철수"

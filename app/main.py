@@ -89,6 +89,10 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
     def settlements(conn=Depends(get_conn)):
         return {**service.list_settlements(conn), "unlinked": service.unlinked_incomings(conn)}
 
+    @app.get("/api/settlements/candidates")
+    def candidates(incoming_id: int, conn=Depends(get_conn)):
+        return guard(service.payments_near, conn, incoming_id)
+
     @app.post("/api/settlements")
     def link(body: LinkIn, conn=Depends(get_conn)):
         ids = body.payment_ids or ([body.payment_id] if body.payment_id else [])

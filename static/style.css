@@ -295,16 +295,19 @@ button { cursor: pointer; }
 .pair .pays { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .pair .tx.in { align-self: flex-start; }
 .pair .tx .share { font-size: 11.5px; color: var(--ink-soft); font-weight: 500; }
-.pick-list {
-  max-height: 228px; overflow-y: auto; border: 1px solid var(--line); border-radius: 16px;
-  background: var(--paper-tint); padding: 4px;
+/* 직접 연결: 받은 돈 무렵의 결제 몇 개를 눌러서 고르는 카드 */
+.pick-cards { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 14px; }
+.pick {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 18px; border: 1.5px solid transparent; background: var(--paper-tint);
 }
-.pick-list label { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; color: var(--ink); font-size: 14px; cursor: pointer; }
-.pick-list label:hover { background: var(--lilac-soft); }
-.pick-list input { width: 18px; height: 18px; accent-color: var(--lilac-deep); flex: none; }
-.pick-list .d { color: var(--ink-faint); font-size: 12.5px; flex: none; }
-.pick-list .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pick-list .a { font-family: var(--num); flex: none; }
+.pick:hover { background: var(--lilac-soft); }
+.pick[aria-pressed="true"] { border-color: var(--lilac-deep); background: var(--lilac-soft); }
+.pick .em { width: 36px; height: 36px; border-radius: 13px; display: grid; place-items: center; font-size: 17px; background: var(--c); flex: none; }
+.pick .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pick .t { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick .d { font-size: 12px; color: var(--ink-faint); }
+.pick .a { font-family: var(--num); font-weight: 600; flex: none; }
 .settle-item { border-bottom: 1px solid var(--line); padding: 4px 0 14px; margin-bottom: 14px; }
 .settle-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .settle-item .reason { font-size: 13px; color: var(--ink-soft); margin: 10px 2px; }

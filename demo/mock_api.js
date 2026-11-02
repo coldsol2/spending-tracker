@@ -197,9 +197,22 @@ function demoRoute(path, opts) {
         out[s.status].push({ id: s.id, reason: s.reason, payment: payments[0], payments, incoming: brief(byId(s.incoming_id)) });
       });
     const linked = new Set(demo.settlements.filter((s) => s.status !== "rejected").map((s) => s.incoming_id));
-    out.unlinked = demo.txns.filter((t) => t.direction === "in" && !linked.has(t.id))
+    const notSettlement = /급여|월급|이자|환불|취소|캐시백/;  // app/settle.py의 EXCLUDE_WORDS와 같은 뜻
+    out.unlinked = demo.txns.filter((t) => t.direction === "in" && !linked.has(t.id)
+        && !notSettlement.test(t.description) && !notSettlement.test(t.kind || ""))
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)).map(txnJson);
     return out;
+  }
+  if (p === "/api/settlements/candidates") {
+    const inc = byId(Number(url.searchParams.get("incoming_id")));
+    if (!inc) fail("받은 돈을 찾을 수 없어요.");
+    const t0 = new Date(inc.occurred_at.replace(" ", "T")).getTime(), day = 86400000;
+    return demo.txns
+      .filter((t) => t.direction === "out" && !["송금", "제외"].includes(t.category))
+      .map((t) => ({ t, dt: new Date(t.occurred_at.replace(" ", "T")).getTime() - t0 }))
+      .filter(({ dt }) => dt >= -14 * day && dt <= 2 * day)
+      .sort((a, b) => Math.abs(a.dt) - Math.abs(b.dt)).slice(0, 6)
+      .map(({ t }) => txnJson(t)).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
   }
   const busy = (incoming, except) => demo.settlements.some((s) => s.incoming_id === incoming && s.status === "confirmed" && s.id !== except);
   if ((m = p.match(/^\/api\/settlements\/(\d+)\/(confirm|reject)$/))) {

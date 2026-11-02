@@ -120,9 +120,11 @@
     <div class="card">
       <div class="card-title"><h2>직접 연결</h2></div>
       <label class="field">받은 돈<select id="link-incoming"></select></label>
-      <div class="field">어느 결제의 정산인가요 (여러 개 골라도 돼요. 1차·2차를 같이 낸 돈처럼)
-        <div class="pick-list" id="link-payments" role="group" aria-label="정산할 결제"></div></div>
-      <button class="btn btn-ink btn-block" id="link-btn">연결하기</button>
+      <div id="link-step" hidden>
+        <div class="field">그 무렵 결제 중 어느 것의 정산인가요? 여러 개 골라도 돼요.</div>
+        <div class="pick-cards" id="link-payments" role="group" aria-label="정산할 결제"></div>
+        <button class="btn btn-ink btn-block" id="link-btn">연결하기</button>
+      </div>
     </div>
 
     <div class="card">
