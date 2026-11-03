@@ -7,18 +7,18 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from .categorize import CATEGORIES, Category
+from .. import categories as cats
 
 BATCH_SIZE = 30
 NEARBY = timedelta(hours=2)
 MAX_EXAMPLES = 40
 WEEKDAYS = "월화수목금토일"
 
-SYSTEM = f"""한국 대학생의 은행 거래내역에서, 가게 이름만으로는 용도를 알 수 없는 출금들을 하나씩 추리하라.
+SYSTEM = """한국 대학생의 은행 거래내역에서, 가게 이름만으로는 용도를 알 수 없는 출금들을 하나씩 추리하라.
 카카오페이·토스페이 같은 간편결제, 나이스·KCP·코페이 같은 결제대행사 이름, 친구에게 보낸 송금이 주로 해당한다.
-카테고리: {", ".join(CATEGORIES)}.
-(식비=식당·배달, 편의점, 술=술집·포차, 유흥=카페·PC방·만화카페·노래방·놀거리, 구독료, 교통비=택시·대중교통,
-쇼핑, 생활=미용·통신·약국·생활용품, 송금=용도를 알 수 없는 사람 간 송금, 제외=지출이 아닌 이동, 기타=정말 모를 때)
+카테고리 (사용자가 직접 만든 것도 있다):
+{categories}
+송금은 용도를 알 수 없는 사람 간 송금, 기타는 정말 모를 때만 쓴다.
 
 각 거래(targets)에는 다음 단서가 있다.
 - time(요일 포함), amount, kind(은행 거래 유형), name
@@ -36,13 +36,19 @@ reason은 판단에 쓴 단서를 짚는 한국어 한 문장(예: "만화카페
 
 class Guess(BaseModel):
     txn_id: int
-    category: Category
+    category: str
     confidence: Literal["high", "medium", "low"]
     reason: str
 
 
 class GuessResult(BaseModel):
+    """응답 모양. 실제 호출 때는 category를 지금 있는 카테고리로 묶은 같은 이름의 형식을 만들어 쓴다."""
     guesses: list[Guess]
+
+
+def result_schema(names: list[str]) -> type[BaseModel]:
+    return cats.schema("GuessResult", "guesses", {
+        "txn_id": (int, ...), "confidence": (Literal["high", "medium", "low"], ...), "reason": (str, ...)}, names)
 
 
 def _when(at: str) -> str:
@@ -97,14 +103,16 @@ def guess(conn: sqlite3.Connection, llm, txn_ids: list[int], hide_ids: set[int] 
     if not txn_ids:
         return result
     ex = examples(conn, hide_ids)
+    names = cats.names(conn)
+    system = SYSTEM.format(categories=cats.prompt_list(conn))
     for i in range(0, len(txn_ids), BATCH_SIZE):
         batch = txn_ids[i:i + BATCH_SIZE]
         rows = conn.execute(f"SELECT * FROM transactions WHERE id IN ({','.join('?' * len(batch))})", batch).fetchall()
         payload = {"targets": [_target(conn, r) for r in rows], "examples": ex}
-        out = llm.parse(SYSTEM, json.dumps(payload, ensure_ascii=False), GuessResult)
+        out = llm.parse(system, json.dumps(payload, ensure_ascii=False), result_schema(names))
         for g in out.guesses:
             if g.txn_id in batch:
-                result[g.txn_id] = {"category": g.category if g.category in CATEGORIES else "기타",
+                result[g.txn_id] = {"category": g.category if g.category in names else cats.FALLBACK,
                                     "confidence": g.confidence, "reason": g.reason}
     return result
 

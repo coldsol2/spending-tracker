@@ -1,10 +1,11 @@
 """DB와 순수 로직, AI 모듈을 엮는 앱 동작들."""
+import calendar
 import sqlite3
 from datetime import date, datetime, timedelta
 
-from . import settle, stats
+from . import categories, settle, stats
 from .agent import categorize as cat_agent
-from .agent import extract, guess, match
+from .agent import extract, guess, income, match
 from .agent.client import LLMError, column_mapper
 from .parser import parse_file
 
@@ -79,6 +80,10 @@ def import_file(conn: sqlite3.Connection, filename: str, data: bytes, llm, passw
             guess_pending(conn, llm)  # 정산 제안 다음에: 친구 정산도 추측 단서가 된다
         except LLMError as e:
             warnings.append(f"거래별 추측 실패: {e}")
+        try:
+            classify_income_pending(conn, llm)
+        except LLMError as e:
+            warnings.append(f"들어온 돈 분류 실패: {e}")
 
     return {"added": added, "duplicates": len(txns) - added, "proposals": proposals,
             "warning": " ".join(warnings) or None}
@@ -200,6 +205,28 @@ def period_summary(conn: sqlite3.Connection, start: date, end: date, top_n: int 
     return s
 
 
+def day_detail(conn: sqlite3.Connection, day: date) -> dict:
+    """하루 화면: 그날 실지출, 카테고리별 금액, 결제(정산 반영 후 금액 포함)와 받은 돈 목록."""
+    s = period_summary(conn, day, day)
+    rows = [_tx(r) for r in conn.execute(
+        TXN_SELECT + f"WHERE {in_period('t.occurred_at')} ORDER BY t.occurred_at", _days(day, day))]
+    outs = [r for r in rows if r["direction"] == "out"]
+    back: dict[int, int] = {}
+    for payment_id, amount in _settled(conn, "confirmed", [o["id"] for o in outs]):
+        back[payment_id] = back.get(payment_id, 0) + amount
+    monthly = sum(v for c, v in get_budgets(conn).items() if c != cat_agent.EXCLUDED)
+    latest = conn.execute("SELECT MAX(date(occurred_at)) FROM transactions").fetchone()[0]
+    return {
+        "date": day.isoformat(),
+        "total": s["total"], "gross": s["gross"], "projected_total": s["projected_total"],
+        "by_category": s["by_category"],
+        "payments": [{**_tx_json(o), "net": max(0, o["amount"] - back.get(o["id"], 0))} for o in outs],
+        "incomings": [_tx_json(r) for r in rows if r["direction"] == "in"],
+        "daily_budget": round(monthly / calendar.monthrange(day.year, day.month)[1]) if monthly else None,
+        "latest": latest,  # 거래가 있는 마지막 날 (오늘 거래가 아직 없을 때 안내용)
+    }
+
+
 def month_range(month: str) -> tuple[date, date]:
     start = date.fromisoformat(f"{month}-01")
     nxt = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -238,8 +265,7 @@ def list_review(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:
 def set_category(conn: sqlite3.Connection, txn_id: int, category: str, scope: str | None = None) -> dict:
     """scope='one'이면 이 거래만, 'merchant'면 같은 이름의 모든 거래와 앞으로 올라올 거래에 적용한다.
     정하지 않으면 사람·페이처럼 거래마다 용도가 다른 이름은 'one', 가게는 'merchant'."""
-    if category not in cat_agent.CATEGORIES:
-        raise ValueError(f"알 수 없는 카테고리: {category}")
+    categories.ensure_known(conn, category)
     if scope not in (None, "one", "merchant"):
         raise ValueError(f"알 수 없는 적용 범위: {scope}")
     row = conn.execute(
@@ -272,6 +298,14 @@ def recategorize(conn: sqlite3.Connection, llm) -> int:
     categorize_pending(conn, llm)
     guess_pending(conn, llm)
     return cur.rowcount
+
+
+def classify_income_pending(conn: sqlite3.Connection, llm) -> int:
+    """아직 종류를 모르는 들어온 돈(사용자가 고르지도, AI가 추측하지도 않은 것)을 분류한다."""
+    ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM transactions WHERE direction = 'in' AND ai_guess IS NULL "
+        "AND id NOT IN (SELECT txn_id FROM income_labels)")]
+    return income.apply(conn, llm, ids)
 
 
 def guess_pending(conn: sqlite3.Connection, llm) -> int:
@@ -396,8 +430,7 @@ def get_budgets(conn: sqlite3.Connection) -> dict[str, int]:
 
 def set_budgets(conn: sqlite3.Connection, budgets: dict[str, int]) -> None:
     for category, amount in budgets.items():
-        if category not in cat_agent.CATEGORIES:
-            raise ValueError(f"알 수 없는 카테고리: {category}")
+        categories.ensure_known(conn, category)
         if amount and amount > 0:
             conn.execute("INSERT INTO budgets(category, monthly_amount) VALUES (?, ?) "
                          "ON CONFLICT(category) DO UPDATE SET monthly_amount = excluded.monthly_amount",

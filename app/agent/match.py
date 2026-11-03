@@ -19,6 +19,9 @@ payment_ids에는 정산 대상 결제 id를 모두 적고, 정산이 아니면 
 모든 입금에 대해 하나씩 답하고, reason에는 판단 근거(어떤 금액을 몇 명이 나눴는지 등)를 한국어 한 문장으로 적어라."""
 
 
+BATCH = 15  # 한 번에 묻는 입금 수
+
+
 class Match(BaseModel):
     incoming_id: int
     payment_ids: list[int]
@@ -42,9 +45,11 @@ def propose(llm, candidates: list[dict]) -> list[dict]:
     if not candidates:
         return []
     allowed = {c["incoming"]["id"]: {p["id"] for p in c["payments"]} for c in candidates}
-    out = llm.parse(SYSTEM, json.dumps(_payload(candidates), ensure_ascii=False), MatchResult)
+    # 몇 달치를 한 번에 주면 답을 쓰기 전에 생각만 하다 토큰이 바닥난다 → 나눠서 묻는다
+    matches = [m for i in range(0, len(candidates), BATCH) for m in llm.parse(
+        SYSTEM, json.dumps(_payload(candidates[i:i + BATCH]), ensure_ascii=False), MatchResult).matches]
     result = []
-    for m in out.matches:
+    for m in matches:
         if m.incoming_id not in allowed:
             continue
         ids = [p for p in dict.fromkeys(m.payment_ids) if p in allowed[m.incoming_id]]

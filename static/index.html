@@ -21,7 +21,8 @@
   <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
-  <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-day" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/><circle cx="12" cy="15" r="1.6"/></symbol>
+  <symbol id="i-next"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-down"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9.5 14.5 12 12l2.5 2.5"/></symbol>
 </svg>
@@ -34,7 +35,7 @@
   <!-- 홈 -->
   <section class="view active" id="view-home">
     <header class="topbar">
-      <button class="icon-btn" data-go="budget" aria-label="예산 설정" style="margin-left:auto"><svg><use href="#i-gear"/></svg></button>
+      <button class="icon-btn" data-go="budget" aria-label="설정" style="margin-left:auto"><svg><use href="#i-gear"/></svg></button>
     </header>
 
     <div class="hero">
@@ -90,6 +91,13 @@
       </div>
     </header>
 
+    <button class="link-row" data-go="settle">
+      <span class="em" style="--c:var(--lilac-soft)"><svg><use href="#i-hands"/></svg></span>
+      <span class="body"><b>친구가 보낸 돈 정산</b><span class="sub">결제에 연결해서 실지출에서 빼요</span></span>
+      <span class="badge-inline" id="pending-badge" hidden></span>
+      <svg class="chev"><use href="#i-next"/></svg>
+    </button>
+
     <div class="card" id="review-card">
       <div class="card-title"><h2>분류 확인</h2><span class="aside" id="review-count"></span></div>
       <p class="hint">친구 송금이나 페이 결제처럼 용도가 그때그때 다른 거래, AI가 확신하지 못한 거래예요. 맞는 카테고리를 눌러 주세요.</p>
@@ -107,9 +115,44 @@
     </div>
   </section>
 
+  <!-- 하루 -->
+  <section class="view" id="view-day">
+    <header class="topbar">
+      <div><h1>하루</h1><p class="sub">그날 쓴 돈과 어디에 썼는지</p></div>
+      <div class="month-nav">
+        <button data-day-step="-1" aria-label="전날"><svg><use href="#i-back"/></svg></button>
+        <span class="day-label" aria-live="polite">오늘</span>
+        <button data-day-step="1" aria-label="다음 날"><svg><use href="#i-next"/></svg></button>
+      </div>
+    </header>
+
+    <div class="hero day-hero">
+      <div class="hero-amount" style="margin-top:0">
+        <div class="label" id="day-title">오늘 쓴 돈</div>
+        <div class="big"><b id="day-total" class="num">0</b><span>원</span></div>
+        <div class="detail" id="day-detail"></div>
+      </div>
+      <div class="cat-cols" id="day-cols" role="img" aria-label="카테고리별 지출"></div>
+      <div id="day-empty" class="empty" hidden></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><h2>쓴 곳</h2><span class="aside" id="day-count"></span></div>
+      <div class="rows" id="day-payments"></div>
+    </div>
+
+    <div class="card" id="day-in-card" hidden>
+      <div class="card-title"><h2>받은 돈</h2></div>
+      <div class="rows" id="day-incomings"></div>
+    </div>
+  </section>
+
   <!-- 정산 -->
   <section class="view" id="view-settle">
-    <header class="topbar"><div><h1>정산</h1><p class="sub">친구들이 보내준 돈을 원래 결제에 연결해요.</p></div></header>
+    <header class="topbar">
+      <button class="icon-btn" data-back aria-label="뒤로"><svg><use href="#i-back"/></svg></button>
+      <div style="flex:1"><h1>정산</h1><p class="sub">친구들이 보내준 돈을 원래 결제에 연결해요.</p></div>
+    </header>
 
     <div class="card">
       <div class="card-title"><h2>확인 대기</h2><span class="aside" id="pending-count"></span></div>
@@ -184,11 +227,47 @@
   <section class="view" id="view-budget">
     <header class="topbar">
       <button class="icon-btn" data-back aria-label="뒤로"><svg><use href="#i-back"/></svg></button>
-      <div style="flex:1"><h1>한 달 예산</h1><p class="sub">비워 두면 예산 없음. 주간 보고서는 월 예산을 주 단위로 나눠 비교해요.</p></div>
+      <div style="flex:1"><h1>설정</h1><p class="sub">예산, 카테고리, 하루 요약 알림</p></div>
     </header>
-    <div class="card"><form id="budget-form"></form></div>
+    <div class="card">
+      <div class="card-title"><h2>한 달 예산</h2></div>
+      <p class="hint">비워 두면 예산 없음. 주간 보고서는 월 예산을 주 단위로 나눠 비교해요.</p>
+      <form id="budget-form"></form>
+    </div>
     <button class="btn btn-ink btn-block" id="budget-save">예산 저장</button>
     <span class="saved" id="budget-saved" hidden>저장했어요</span>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-title"><h2>카테고리</h2></div>
+      <p class="hint">기본 카테고리는 이모지만 바꿀 수 있어요. 필요한 카테고리는 직접 만들 수 있고, 설명을 적으면 AI가 그걸 보고 분류해요.</p>
+      <div id="cat-manage"></div>
+      <div class="cat-new">
+        <div class="cat-row">
+          <input class="cat-emoji" id="new-emoji" maxlength="8" placeholder="🙂" aria-label="새 카테고리 이모지">
+          <div class="body">
+            <input id="new-name" maxlength="10" placeholder="이름 (예: 운동)" aria-label="새 카테고리 이름">
+            <input class="cat-desc" id="new-desc" maxlength="80" placeholder="어떤 지출이 들어가나요 (예: 헬스장, 필라테스)" aria-label="새 카테고리 설명">
+          </div>
+        </div>
+        <div class="emoji-ideas" id="emoji-ideas"></div>
+        <button type="button" class="btn btn-soft btn-block" id="new-add">카테고리 추가</button>
+      </div>
+      <p class="notice ok" id="cat-status" hidden style="margin:12px 0 0"></p>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-title"><h2>하루 요약 알림</h2></div>
+      <p class="hint">정한 시간이 되면 그날 쓴 돈을 알려줘요. 지금은 이 앱 창이 열려 있을 때만 알림이 떠요.</p>
+      <div class="set-row">
+        <span class="name">알림 시간</span>
+        <input type="time" id="notify-time" value="22:00" aria-label="하루 요약 알림 시간">
+      </div>
+      <div class="set-row">
+        <span class="name">알림 받기</span>
+        <button class="btn btn-soft" id="notify-toggle" style="padding:6px 14px;font-size:13px">켜기</button>
+      </div>
+      <p class="hint" id="notify-status" style="margin:8px 0 0"></p>
+    </div>
   </section>
 </div>
 
@@ -196,7 +275,7 @@
   <button data-tab="home" class="active"><svg><use href="#i-home"/></svg>홈</button>
   <button data-tab="txns"><svg><use href="#i-list"/></svg>거래<span class="badge" id="review-badge" hidden></span></button>
   <button class="fab" data-tab="upload" aria-label="거래내역 올리기"><svg><use href="#i-plus"/></svg></button>
-  <button data-tab="settle"><svg><use href="#i-hands"/></svg>정산<span class="badge" id="pending-badge" hidden></span></button>
+  <button data-tab="day"><svg><use href="#i-day"/></svg>하루</button>
   <button data-tab="report"><svg><use href="#i-report"/></svg>보고서</button>
 </nav>
 

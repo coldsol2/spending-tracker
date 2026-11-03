@@ -1,7 +1,19 @@
 // 공유용 데모: 서버 대신 브라우저 안에서 같은 API 응답을 만든다.
 // 데이터는 samples/sample_toss.csv와 같은 연습용 가짜 거래이고, 바꾼 내용은 새로고침하면 처음으로 돌아간다.
 const DEMO_TODAY = "2026-10-30";
-const DEMO_CATEGORIES = ["식비", "편의점", "술", "유흥", "구독료", "교통비", "쇼핑", "생활", "송금", "기타", "제외"];
+// app/categories.py의 BUILTIN과 같은 기본 카테고리 (이름, 이모지, 색, 설명)
+const DEMO_BUILTIN = [
+  ["식비", "🍚", "#ffb98a", "식당, 학식, 분식, 패스트푸드, 배달앱"], ["편의점", "🏪", "#ffd23f", "이마트24, GS25, CU, 세븐일레븐"],
+  ["술", "🍺", "#f2709c", "술집, 호프, 포차, 이자카야"], ["유흥", "🎮", "#a98bea", "카페·디저트, 만화카페, PC방, 노래방, 영화"],
+  ["구독료", "🔁", "#c9b6f5", "넷플릭스·유튜브 등 정기결제"], ["교통비", "🚕", "#ffe58a", "택시, 버스·지하철, 교통카드"],
+  ["쇼핑", "🛍️", "#f8a9c4", "온라인몰, 옷, 전자기기, 화장품"], ["생활", "🧴", "#e3d6f5", "미용실, 통신요금, 생활용품, 병원, 약국"],
+  ["송금", "💸", "#ffd6bd", "사람에게 보낸 돈"], ["기타", "📦", "#cfc4e0", "어디에도 넣기 어려운 것"],
+  ["제외", "⏸️", "#f1edf4", "환전, 투자, 저축처럼 지출이 아닌 이동"],
+];
+const DEMO_PALETTE = ["#9ad0c2", "#f4a7b9", "#b8a4f0", "#ffcf99", "#a7c7f2", "#f6c1e0"];
+const demoCategories = DEMO_BUILTIN.map(([name, emoji, color, description]) =>
+  ({ name, emoji, color, description, builtin: true, special: ["송금", "기타", "제외"].includes(name) }));
+const categoryNames = () => demoCategories.map((c) => c.name);
 
 // [일시, 내용, 부호 있는 금액, 은행 거래 유형, 카테고리, 거래마다 용도가 다른지]
 const DEMO_ROWS = [
@@ -168,12 +180,53 @@ function demoRoute(path, opts) {
   const p = url.pathname, method = (opts.method || "GET").toUpperCase();
   const body = opts.body && typeof opts.body === "string" ? JSON.parse(opts.body) : {};
   let m;
-  if (p === "/api/meta") return { categories: DEMO_CATEGORIES, ai_enabled: true, today: DEMO_TODAY };
+  if (p === "/api/meta") return { categories: categoryNames(), category_info: demoCategories, ai_enabled: true, today: DEMO_TODAY };
+  if (p === "/api/categories" && method === "POST") {
+    const name = (body.name || "").trim(), emoji = (body.emoji || "").trim();
+    if (!name || name.length > 10) fail("카테고리 이름은 1~10글자로 정해 주세요.");
+    if (!emoji) fail("이모지를 하나 골라 주세요.");
+    if (categoryNames().includes(name)) fail(`'${name}' 카테고리는 이미 있어요.`);
+    const custom = demoCategories.filter((c) => !c.builtin).length;
+    const c = { name, emoji, color: DEMO_PALETTE[custom % DEMO_PALETTE.length], description: (body.description || "").trim(), builtin: false, special: false };
+    demoCategories.splice(demoCategories.findIndex((x) => x.name === "송금"), 0, c);
+    return c;
+  }
+  if ((m = p.match(/^\/api\/categories\/(.+)$/))) {
+    const name = decodeURIComponent(m[1]), c = demoCategories.find((x) => x.name === name);
+    if (!c) fail(`'${name}' 카테고리를 찾을 수 없어요.`);
+    if (method === "PATCH") {
+      if (body.emoji != null) c.emoji = body.emoji.trim() || c.emoji;
+      if (body.description != null) { if (c.builtin) fail("기본 카테고리의 설명은 바꿀 수 없어요."); c.description = body.description.trim(); }
+      return { ok: true };
+    }
+    if (c.builtin) fail("기본 카테고리는 지울 수 없어요.");
+    const moved = demo.txns.filter((t) => t.category === name);
+    moved.forEach((t) => { t.category = "기타"; t.reviewed = false; });
+    demoCategories.splice(demoCategories.indexOf(c), 1);
+    delete demo.budgets[name];
+    return { moved: moved.length };
+  }
   if (p === "/api/summary") {
     const month = url.searchParams.get("month");
     const start = `${month}-01`, end = `${month}-${String(monthDays(start)).padStart(2, "0")}`;
     const s = summarize(start, end);
     return { ...s, month, today: s.daily[DEMO_TODAY] || 0, budgets: { ...demo.budgets } };
+  }
+  if (p === "/api/day") {
+    const day = url.searchParams.get("date");
+    const s = summarize(day, day);
+    const confirmedBack = {};
+    demo.settlements.filter((x) => x.status === "confirmed")
+      .forEach((x) => parts(x).forEach((q) => { confirmedBack[q.id] = (confirmedBack[q.id] || 0) + q.share; }));
+    const ofDay = demo.txns.filter((t) => t.occurred_at.startsWith(day)).sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+    const monthly = Object.values(demo.budgets).reduce((a, v) => a + v, 0);
+    return {
+      date: day, total: s.total, gross: s.gross, projected_total: s.projected_total, by_category: s.by_category,
+      payments: ofDay.filter((t) => t.direction === "out").map((t) => ({ ...txnJson(t), net: Math.max(0, t.amount - (confirmedBack[t.id] || 0)) })),
+      incomings: ofDay.filter((t) => t.direction === "in").map(txnJson),
+      daily_budget: monthly ? Math.round(monthly / monthDays(day)) : null,
+      latest: demo.txns.map((t) => t.occurred_at.slice(0, 10)).sort().pop(),
+    };
   }
   if (p === "/api/transactions") {
     const month = url.searchParams.get("month");

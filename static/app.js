@@ -6,21 +6,12 @@ const short = (n) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1).r
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const svg = (id) => `<svg><use href="#${id}"/></svg>`;
 
-// 키 컬러(라일락·핑크·노랑·피치)에서 뽑은 카테고리 색
-const CATS = {
-  식비: { c: "#ffb98a", e: "🍚" },
-  편의점: { c: "#ffd23f", e: "🏪" },
-  술: { c: "#f2709c", e: "🍺" },
-  유흥: { c: "#a98bea", e: "🎮" },
-  구독료: { c: "#c9b6f5", e: "🔁" },
-  교통비: { c: "#ffe58a", e: "🚕" },
-  쇼핑: { c: "#f8a9c4", e: "🛍️" },
-  생활: { c: "#e3d6f5", e: "🧴" },
-  송금: { c: "#ffd6bd", e: "💸" },
-  기타: { c: "#cfc4e0", e: "📦" },
-  제외: { c: "#f1edf4", e: "⏸️" },
-  입금: { c: "#ece4fb", e: "💜" },
-};
+// 카테고리 색·이모지는 서버(설정에서 사용자가 바꾸거나 추가한 것)에서 받는다. 받은 돈 줄에만 쓰는 '입금'은 고정
+const CATS = { 기타: { c: "#cfc4e0", e: "📦" }, 입금: { c: "#ece4fb", e: "💜" } };
+function applyCategories(info) {
+  for (const k of Object.keys(CATS)) if (!["기타", "입금"].includes(k)) delete CATS[k];
+  info.forEach((c) => { CATS[c.name] = { c: c.color, e: c.emoji }; });
+}
 const cat = (name) => CATS[name || "기타"] || CATS.기타;
 const CONFIDENCE = { high: "확실해요", medium: "그럴듯해요", low: "단서가 부족해요" };
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
@@ -46,12 +37,14 @@ const md = (s) => `${Number(s.slice(5, 7))}.${Number(s.slice(8, 10))}`;
 
 // ---------- 화면 이동 ----------
 const loaders = {
-  home: loadHome, txns: loadTransactions, settle: loadSettlements, report: loadReport,
+  home: loadHome, txns: loadTransactions, day: loadDay, settle: loadSettlements, report: loadReport,
   upload: async () => {}, budget: loadBudgets,
 };
+// 탭바에 없는 화면: 뒤로 가기로 돌아갈 곳을 바꾸지 않는다
+const SUB_VIEWS = ["upload", "budget", "settle"];
 
 function go(name) {
-  if (name !== state.view) state.prev = ["upload", "budget"].includes(state.view) ? state.prev : state.view;
+  if (name !== state.view) state.prev = SUB_VIEWS.includes(state.view) ? state.prev : state.view;
   state.view = name;
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $$(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
@@ -103,16 +96,7 @@ async function loadHome() {
   const budgetTotal = Object.entries(s.budgets).filter(([c]) => c !== "제외").reduce((a, [, v]) => a + v, 0);
   const cats = Object.entries(s.by_category).filter(([, v]) => v > 0);
 
-  // 카테고리를 옆으로 나란히, 큰 순서대로 세로 막대
-  const maxCat = cats.length ? cats[0][1] : 0;
-  const box = $("#cat-cols");
-  box.style.gridTemplateColumns = `repeat(${Math.max(cats.length, 1)}, minmax(0, 1fr))`;
-  box.setAttribute("aria-label", cats.map(([c, v]) => `${c} ${won(v)}`).join(", ") || "카테고리별 지출 없음");
-  box.innerHTML = cats.length ? cats.map(([c, v]) => `<div>
-      <div class="v">${short(v)}</div>
-      <div class="bar" style="height:${Math.max(6, Math.round((v / maxCat) * 110))}px;--c:${cat(c).c}"></div>
-      <div class="n">${esc(c)}</div><div class="p">${Math.round((v / s.total) * 100)}%</div>
-    </div>`).join("") : `<div class="empty">이 달의 지출이 아직 없어요.</div>`;
+  renderCols($("#cat-cols"), cats, s.total, "이 달의 지출이 아직 없어요.");
 
   $("#total").textContent = num(s.total);
   const back = s.gross - s.total;
@@ -140,6 +124,18 @@ async function loadHome() {
 }
 
 const daysIn = (month) => { const [y, m] = month.split("-").map(Number); return new Date(y, m, 0).getDate(); };
+
+// 카테고리를 옆으로 나란히, 큰 순서대로 세로 막대 (홈과 하루 화면이 같이 쓴다)
+function renderCols(box, cats, total, emptyText) {
+  const max = cats.length ? cats[0][1] : 0;
+  box.style.gridTemplateColumns = `repeat(${Math.max(cats.length, 1)}, minmax(0, 1fr))`;
+  box.setAttribute("aria-label", cats.map(([c, v]) => `${c} ${won(v)}`).join(", ") || "카테고리별 지출 없음");
+  box.innerHTML = cats.length ? cats.map(([c, v]) => `<div>
+      <div class="v">${short(v)}</div>
+      <div class="bar" style="height:${Math.max(6, Math.round((v / max) * 110))}px;--c:${cat(c).c}"></div>
+      <div class="n">${esc(c)}</div><div class="p">${Math.round((v / total) * 100)}%</div>
+    </div>`).join("") : (emptyText ? `<div class="empty">${emptyText}</div>` : "");
+}
 
 // ---------- 지난 주 보고서 자동 작성 ----------
 // 본 보고서는 브라우저에 기억해 두고 홈 카드를 다시 띄우지 않는다 (저장이 막힌 환경이면 매번 보일 뿐)
@@ -214,7 +210,7 @@ function renderWeek(s, budgetTotal) {
   $("#week").innerHTML = days.map((d) => {
     const ok = dailyBudget && d.v !== undefined && !d.future && d.v <= dailyBudget;
     const cls = d.v === undefined ? "out" : d.iso === today ? "today" : d.v ? "" : "zero";
-    return `<div><div class="d">${d.w}</div>
+    return `<div class="${d.future ? "" : "tap"}" ${d.future ? "" : `data-open-day="${d.iso}" role="button" tabindex="0" aria-label="${md(d.iso)} 하루 보기"`}><div class="d">${d.w}</div>
       <div class="dot ${ok ? "ok" : ""}">${ok ? svg("i-check") : ""}</div>
       <div class="bar-wrap"><div class="bar ${cls}" style="height:${d.v ? Math.max(8, (d.v / max) * 92) : 6}px" title="${won(d.v || 0)}"></div></div>
       <div class="amt">${d.v ? short(d.v) : "·"}</div></div>`;
@@ -236,6 +232,122 @@ function renderTiles(s, cats) {
       <div class="name">${esc(c)}</div><div class="share">${Math.round((v / s.total) * 100)}%</div>
       <div class="amt">${won(v)}</div>${budget}</div>`;
   }).join("") : `<div class="empty" style="padding:0 4px">카테고리별 지출이 여기에 모여요.</div>`;
+}
+
+// ---------- 하루 ----------
+function dayLabel(iso) {
+  const today = state.meta.today;
+  if (iso === today) return "오늘";
+  if (iso === isoDate(addDays(parseDate(today), -1))) return "어제";
+  return `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일 (${WEEKDAYS[(parseDate(iso).getDay() + 6) % 7]})`;
+}
+
+async function loadDay() {
+  state.day ||= state.meta.today;
+  const iso = state.day, d = await api(`/api/day?date=${iso}`);
+  const label = dayLabel(iso);
+  $(".day-label").textContent = label;
+  $('[data-day-step="1"]').classList.toggle("at-end", iso >= state.meta.today);
+  $("#day-title").textContent = label.length <= 2 ? `${label} 쓴 돈` : "이날 쓴 돈";
+  $("#day-total").textContent = num(d.total);
+
+  const back = d.gross - d.total;
+  const lines = [];
+  if (back > 0) lines.push(`결제 ${won(d.gross)} 중 <b>${won(back)}</b>을 돌려받았어요`);
+  if (d.daily_budget) {
+    const diff = d.daily_budget - d.total;
+    lines.push(`하루 예산 ${won(d.daily_budget)}보다 <b>${won(Math.abs(diff))}</b> ${diff >= 0 ? "적게" : "많이"} 썼어요`);
+  }
+  if (d.projected_total !== d.total) lines.push(`대기 중인 정산을 확정하면 ${won(d.projected_total)}`);
+  $("#day-detail").innerHTML = lines.join("<br>");
+
+  const cats = Object.entries(d.by_category).filter(([, v]) => v > 0);
+  renderCols($("#day-cols"), cats, d.total, "");
+  const empty = $("#day-empty");
+  const nothing = !d.payments.length && !d.incomings.length;
+  empty.hidden = !nothing;
+  if (nothing) {
+    empty.innerHTML = d.latest && d.latest < iso
+      ? `이날 거래가 아직 없어요. 마지막 기록인 <button data-open-day="${d.latest}">${dayLabel(d.latest)}</button>을 볼까요?`
+      : "이날은 쓴 돈이 없어요.";
+  }
+
+  $("#day-count").textContent = d.payments.length ? `${d.payments.length}건` : "";
+  $("#day-payments").innerHTML = d.payments.length ? d.payments.map((t) => row({
+    category: t.category, title: t.description,
+    meta: `${t.occurred_at.slice(11, 16)} · ${esc(t.category || "기타")}${t.needs_review ? " · 확인 필요" : ""}`,
+    right: `${t.net !== t.amount ? `<span class="strike">${won(t.amount)}</span>` : ""}`
+      + `<div class="amt ${t.category === "제외" ? "excluded" : ""}">${won(t.net)}</div>`,
+  })).join("") : `<div class="empty">결제가 없어요.</div>`;
+
+  $("#day-in-card").hidden = !d.incomings.length;
+  $("#day-incomings").innerHTML = d.incomings.map((t) => row({
+    category: "입금", title: t.description,
+    meta: `${t.occurred_at.slice(11, 16)}${t.settled ? " · 정산·취소로 연결됨" : ""}`,
+    right: `<div class="amt in">+${won(t.amount)}</div>`,
+  })).join("");
+}
+
+function openDay(iso) {
+  state.day = iso;
+  if (state.view === "day") loadDay().catch(showError);
+  else go("day");
+}
+
+document.addEventListener("click", (e) => {
+  const open = e.target.closest("[data-open-day]");
+  if (open) return openDay(open.dataset.openDay);
+  const step = e.target.closest("[data-day-step]");
+  if (!step) return;
+  const next = isoDate(addDays(parseDate(state.day), Number(step.dataset.dayStep)));
+  if (next <= state.meta.today) openDay(next);
+});
+document.addEventListener("keydown", (e) => {
+  const open = e.target.closest?.("[data-open-day]");
+  if (open && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDay(open.dataset.openDay); }
+});
+
+// ---------- 하루 요약 알림 ----------
+// 설정은 이 브라우저에만 저장한다. 앱 창이 열려 있을 때 정한 시간이 지나면 하루에 한 번 알림을 띄운다.
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* 무시 */ } },
+};
+const notifyOn = () => store.get("notify-on", "0") === "1" && "Notification" in window && Notification.permission === "granted";
+
+function renderNotifySettings() {
+  $("#notify-time").value = store.get("notify-time", "22:00");
+  const supported = "Notification" in window;
+  $("#notify-toggle").textContent = notifyOn() ? "끄기" : "켜기";
+  $("#notify-status").textContent = !supported ? "이 브라우저는 알림을 지원하지 않아요."
+    : Notification.permission === "denied" ? "브라우저에서 알림이 막혀 있어요. 주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꿔 주세요."
+    : notifyOn() ? `매일 ${$("#notify-time").value}에 그날 쓴 돈을 알려줘요.` : "꺼져 있어요.";
+}
+
+$("#notify-time").addEventListener("change", (e) => { store.set("notify-time", e.target.value); renderNotifySettings(); });
+$("#notify-toggle").addEventListener("click", async () => {
+  if (!("Notification" in window)) return renderNotifySettings();
+  if (notifyOn()) { store.set("notify-on", "0"); return renderNotifySettings(); }
+  const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+  store.set("notify-on", permission === "granted" ? "1" : "0");
+  renderNotifySettings();
+});
+
+async function checkDailyNotify() {
+  if (!notifyOn()) return;
+  const now = new Date(), today = isoDate(now);
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  if (hhmm < store.get("notify-time", "22:00") || store.get("notified-on", "") === today) return;
+  store.set("notified-on", today);
+  try {
+    const d = await api(`/api/day?date=${today}`);
+    const top = Object.entries(d.by_category).filter(([, v]) => v > 0).slice(0, 3)
+      .map(([c, v]) => `${c} ${won(v)}`).join(", ");
+    const n = new Notification(`오늘 쓴 돈 ${won(d.total)}`, {
+      body: top || (d.payments.length ? "모두 정산·취소로 돌려받았어요." : "오늘은 기록된 지출이 없어요."),
+    });
+    n.onclick = () => { window.focus(); openDay(today); n.close(); };
+  } catch { /* 다음 확인 때 다시 시도하지 않는다: 하루 한 번만 */ }
 }
 
 function row({ category, title, titleHtml, meta, right, extra = "" }) {
@@ -426,9 +538,77 @@ drop.addEventListener("drop", (e) => {
 async function loadBudgets() {
   const b = await api("/api/budgets");
   $("#budget-form").innerHTML = state.meta.categories.filter((c) => c !== "제외").map((c) => `<label class="set-row">
-      <span class="em" style="--c:${cat(c).c}">${cat(c).e}</span><span class="name">${c}</span>
-      <input type="number" inputmode="numeric" min="0" step="10000" name="${c}" value="${b[c] ?? ""}" placeholder="없음" aria-label="${c} 한 달 예산"></label>`).join("");
+      <span class="em" style="--c:${cat(c).c}">${esc(cat(c).e)}</span><span class="name">${esc(c)}</span>
+      <input type="number" inputmode="numeric" min="0" step="10000" name="${esc(c)}" value="${b[c] ?? ""}" placeholder="없음" aria-label="${esc(c)} 한 달 예산"></label>`).join("");
+  renderCategories();
+  renderNotifySettings();
 }
+
+// ---------- 카테고리 관리 ----------
+// 기본 카테고리는 이모지만, 내가 만든 카테고리는 이모지·설명을 바꾸고 지울 수 있다
+const EMOJI_IDEAS = ["🏋️", "📚", "✈️", "🐶", "🎁", "💄", "🎵", "☕", "🍰", "🏠", "💊", "🎓"];
+
+async function refreshCategories(message) {
+  state.meta = await api("/api/meta");
+  applyCategories(state.meta.category_info);
+  await loadBudgets();
+  const status = $("#cat-status");
+  status.hidden = !message;
+  status.textContent = message || "";
+}
+
+function renderCategories() {
+  $("#cat-manage").innerHTML = state.meta.category_info.map((c) => `<div class="cat-row">
+      <input class="cat-emoji" value="${esc(c.emoji)}" data-cat-emoji="${esc(c.name)}" maxlength="8" aria-label="${esc(c.name)} 이모지">
+      <div class="body"><b>${esc(c.name)}</b>
+        ${c.builtin ? `<span class="sub">${esc(c.description)}</span>`
+          : `<input class="cat-desc" value="${esc(c.description)}" data-cat-desc="${esc(c.name)}" maxlength="80" placeholder="어떤 지출이 들어가나요" aria-label="${esc(c.name)} 설명">`}</div>
+      ${c.builtin ? `<span class="lock">기본</span>` : `<button type="button" class="btn btn-ghost" data-cat-del="${esc(c.name)}">삭제</button>`}
+    </div>`).join("");
+  $("#emoji-ideas").innerHTML = EMOJI_IDEAS.map((e) => `<button type="button" data-emoji-idea="${e}" aria-label="${e} 고르기">${e}</button>`).join("");
+}
+
+$("#cat-manage").addEventListener("change", async (e) => {
+  const t = e.target, name = t.dataset.catEmoji || t.dataset.catDesc;
+  if (!name) return;
+  const json = t.dataset.catEmoji ? { emoji: t.value } : { description: t.value };
+  try {
+    await api(`/api/categories/${encodeURIComponent(name)}`, { method: "PATCH", json });
+    await refreshCategories(`'${name}'을(를) 바꿨어요.`);
+  } catch (err) { showError(err); await refreshCategories(); }
+});
+
+$("#cat-manage").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-cat-del]");
+  if (!b) return;
+  // 한 번 더 눌러야 지운다 (브라우저 확인 창 대신)
+  if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "정말 삭제"; b.classList.add("danger"); return; }
+  const name = b.dataset.catDel;
+  try {
+    const r = await api(`/api/categories/${encodeURIComponent(name)}`, { method: "DELETE" });
+    await refreshCategories(r.moved ? `'${name}'을(를) 지웠어요. 거래 ${r.moved}건은 '기타'로 옮겨서 분류 확인에 다시 올렸어요.`
+      : `'${name}'을(를) 지웠어요.`);
+  } catch (err) { showError(err); }
+});
+
+$("#emoji-ideas").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-emoji-idea]");
+  if (b) $("#new-emoji").value = b.dataset.emojiIdea;
+});
+
+$("#new-add").addEventListener("click", async () => {
+  const name = $("#new-name").value.trim();
+  try {
+    await api("/api/categories", { method: "POST", json: {
+      name, emoji: $("#new-emoji").value, description: $("#new-desc").value } });
+    ["#new-name", "#new-desc", "#new-emoji"].forEach((s) => ($(s).value = ""));
+    await refreshCategories(`'${name}'을(를) 만들었어요. 앞으로 올라오는 거래부터 AI가 써요. 예전 거래에도 넣으려면 거래 탭에서 'AI로 다시 분류'를 눌러 주세요.`);
+  } catch (err) {
+    const status = $("#cat-status");
+    status.hidden = false;
+    status.textContent = err.message;
+  }
+});
 $("#budget-save").addEventListener("click", async () => {
   const body = {};
   new FormData($("#budget-form")).forEach((v, k) => { body[k] = Number(v) || 0; });
@@ -523,10 +703,13 @@ function drawMonthChart(daily) {
 // ---------- 시작 ----------
 async function init() {
   state.meta = await api("/api/meta");
+  applyCategories(state.meta.category_info);
   $("#ai-warning").hidden = state.meta.ai_enabled;
   setMonth(state.meta.today.slice(0, 7));
   Chart.defaults.font.family = '"IBM Plex Sans KR", system-ui, sans-serif';
   await loadHome();
   autoReport();  // 기다리지 않는다: 보고서를 쓰는 동안에도 홈은 바로 보인다
+  checkDailyNotify();
+  setInterval(checkDailyNotify, 60_000);
 }
 init().catch(showError);

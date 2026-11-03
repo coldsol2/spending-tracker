@@ -3,6 +3,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from . import categories
+
 ROOT = Path(__file__).resolve().parent.parent
 
 SCHEMA = """
@@ -17,7 +19,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     source_hash TEXT NOT NULL UNIQUE,
     kind TEXT,                          -- 은행이 적은 거래 유형 (체크카드결제, 출금 등)
     reviewed INTEGER NOT NULL DEFAULT 0, -- 사용자가 카테고리를 직접 정했으면 1
-    ai_guess TEXT,                      -- 거래 하나를 앞뒤 상황까지 보고 AI가 추측한 카테고리
+    ai_guess TEXT,                      -- AI 추측: 나간 돈은 카테고리, 들어온 돈은 종류(정산·용돈·알바비…)
     ai_confidence TEXT,                 -- high | medium | low
     ai_reason TEXT                      -- 추측 근거 한 문장
 );
@@ -47,6 +49,13 @@ CREATE TABLE IF NOT EXISTS merchant_categories (
     source TEXT NOT NULL DEFAULT 'ai',     -- 'ai' | 'user'
     confident INTEGER NOT NULL DEFAULT 1,  -- AI가 확신하는지
     varies INTEGER NOT NULL DEFAULT 0      -- 사람·페이처럼 거래마다 용도가 다른 이름인지
+);
+-- 사용자가 직접 고른 들어온 돈의 종류 (AI 예시이자 정확도 정답)
+CREATE TABLE IF NOT EXISTS income_labels (
+    txn_id INTEGER PRIMARY KEY REFERENCES transactions(id),
+    label TEXT NOT NULL,                   -- 정산 | 용돈 | 알바비 | 환불 | 기타 수입
+    payment_ids TEXT NOT NULL DEFAULT '',  -- 정산이면 그 결제 id들 (공백으로 구분)
+    memo TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS budgets (
     category TEXT PRIMARY KEY,
@@ -104,7 +113,9 @@ def connect(path: str | os.PathLike | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     if path not in _ready or not existed:  # 서버가 켜진 동안 파일이 지워졌어도 다시 만든다
         with _ready_lock:
-            conn.executescript(SCHEMA)
+            conn.executescript(SCHEMA + categories.SCHEMA)
             _migrate(conn)
+            categories.seed(conn)
+            conn.commit()
             _ready.add(path)
     return conn

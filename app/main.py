@@ -7,9 +7,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, service
+from . import categories, db, service
 from .agent import report
-from .agent.categorize import CATEGORIES
 from .agent.client import LLMError, get_client
 
 STATIC = db.ROOT / "static"
@@ -28,6 +27,17 @@ class LinkIn(BaseModel):
 
 class ReportIn(BaseModel):
     week_start: date
+
+
+class NewCategoryIn(BaseModel):
+    name: str
+    emoji: str
+    description: str = ""
+
+
+class CategoryEditIn(BaseModel):
+    emoji: str | None = None
+    description: str | None = None
 
 
 def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
@@ -54,8 +64,27 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
             raise HTTPException(503, str(e))
 
     @app.get("/api/meta")
-    def meta():
-        return {"categories": CATEGORIES, "ai_enabled": llm_factory() is not None, "today": date.today().isoformat()}
+    def meta(conn=Depends(get_conn)):
+        info = categories.all_categories(conn)
+        return {"categories": [c["name"] for c in info], "category_info": info,
+                "ai_enabled": llm_factory() is not None, "today": date.today().isoformat()}
+
+    @app.get("/api/categories")
+    def list_categories(conn=Depends(get_conn)):
+        return categories.all_categories(conn)
+
+    @app.post("/api/categories")
+    def add_category(body: NewCategoryIn, conn=Depends(get_conn)):
+        return guard(categories.add, conn, body.name, body.emoji, body.description)
+
+    @app.patch("/api/categories/{name}")
+    def edit_category(name: str, body: CategoryEditIn, conn=Depends(get_conn)):
+        guard(categories.update, conn, name, body.emoji, body.description)
+        return {"ok": True}
+
+    @app.delete("/api/categories/{name}")
+    def delete_category(name: str, conn=Depends(get_conn)):
+        return {"moved": guard(categories.remove, conn, name)}
 
     @app.post("/api/upload")
     async def upload(file: UploadFile = File(...), password: str | None = Form(None), conn=Depends(get_conn)):
@@ -68,6 +97,10 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
         s = service.period_summary(conn, start, end)
         today = date.today().isoformat()
         return {**s, "month": month, "today": s["daily"].get(today, 0), "budgets": service.get_budgets(conn)}
+
+    @app.get("/api/day")
+    def day(date: date, conn=Depends(get_conn)):
+        return service.day_detail(conn, date)
 
     @app.get("/api/transactions")
     def transactions(month: str, conn=Depends(get_conn)):

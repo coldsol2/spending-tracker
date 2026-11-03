@@ -85,7 +85,9 @@ PDF는 표를 먼저 읽고, 표가 안 잡히면 날짜로 시작하는 줄을 
 |---|---|
 | `app/parser.py`, `app/pdf_reader.py` | PDF·엑셀·CSV → 거래 목록 |
 | `app/settle.py`, `app/stats.py` | 정산 후보 규칙, 실지출 집계 (AI 없음) |
-| `app/agent/` | Claude 호출: 카테고리 분류, 정산 매칭, PDF 추출, 주간 보고서 |
+| `app/agent/` | Claude 호출: 카테고리 분류, 거래별 추측, 들어온 돈 분류, 정산 매칭, PDF 추출, 주간 보고서, 콘솔 에이전트 |
+| `app/categories.py` | 기본·사용자 카테고리 (이모지, 추가·삭제) |
+| `agent_app/` | 콘솔 에이전트와 대화해 보는 최소 예제 |
 | `app/service.py` | DB와 위 모듈을 엮는 앱 동작 |
 | `app/main.py` | FastAPI 서버 |
 | `static/` | 화면 (HTML·CSS·JS, 빌드 과정 없음) |
@@ -122,3 +124,23 @@ python -m app.agent.evaluate
 
 정답을 3묶음으로 나눠, 맞히는 묶음의 정답은 숨기고 나머지 묶음의 선택만 예시로 줘요.
 프롬프트나 단서를 바꾼 뒤 전후로 돌려 비교하세요.
+
+### 정답 데이터 만들기 (검증용 DB)
+
+앱 DB와 따로 `data/eval.db`에 거래내역을 넣고, 클릭으로 정답을 매겨 채점해요.
+
+```bash
+python -m app.agent.answer_sheet export --no-ai "토스.pdf"   # 검증용 DB + 정답 매기기 화면
+# data/정답_매기기.html 을 브라우저로 열어 입출금마다 정답을 고르고 정답.csv 저장
+python -m app.agent.answer_sheet load 정답.csv
+python -m app.agent.evaluate --db data/eval.db --engine both  # 나간 돈: 기존 API vs Console 에이전트
+python -m app.agent.evaluate --db data/eval.db --target in    # 들어온 돈: 정산·용돈·알바비·환불·기타 수입
+```
+
+## AI 구성
+
+- 기본 모델은 **Claude Haiku 5.5** (`.env`의 `CLAUDE_MODEL`로 바꿀 수 있음).
+- 나간 돈: 가게 이름 단위 분류 → 애매한 거래만 앞뒤 거래·정산 단서로 하나씩 추측.
+- 들어온 돈: 결제 취소·확정 정산은 규칙으로, 나머지는 보낸 사람 패턴·근처 결제 금액으로 종류를 추측.
+- 어려운 거래는 Claude 콘솔에서 만든 **분류 전용 에이전트**(Managed Agents)에게 맡길 수 있어요(`app/agent/managed.py`).
+  에이전트는 앱이 주는 거래 조회 도구(`app/agent/agent_tools.py`)로 필요한 만큼 더 찾아봐요.

@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent.categorize import CategoryResult, Item
+from app.agent.income import IncomeGuess, IncomeResult
 from app.agent.match import Match, MatchResult
 from app.main import create_app
 from conftest import FakeLLM
@@ -23,7 +24,10 @@ def fake_llm():
     def matches(cands):
         return MatchResult(matches=[Match(incoming_id=c["incoming"]["id"], payment_ids=[c["payments"][0]["id"]],
                                           reason="결제 직후 입금") for c in cands])
-    return FakeLLM({"CategoryResult": categories, "MatchResult": matches})
+    def incomes(payload):
+        return IncomeResult(guesses=[IncomeGuess(txn_id=t["txn_id"], category="정산", confidence="medium",
+                                                 reason="결제 직후 입금") for t in payload["targets"]])
+    return FakeLLM({"CategoryResult": categories, "MatchResult": matches, "IncomeResult": incomes})
 
 
 @pytest.fixture
