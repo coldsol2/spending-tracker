@@ -31,11 +31,14 @@ def build(out: Path) -> Path:
     css = (STATIC / "style.css").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     mock = (Path(__file__).parent / "mock_api.js").read_text(encoding="utf-8")
+    policies = (ROOT / "app" / "policies.json").read_text(encoding="utf-8")
+    mock = mock.replace("/*POLICIES*/null", policies.replace("</", "<\\/"), 1)
 
     # 실제 서버 호출을 데모용 가짜 서버로 바꾸고, 공유 페이지에서 막히는 alert/confirm을 대체한다
     app = app.replace("async function api(path, opts = {})", "async function serverApi(path, opts = {})", 1)
     app = app.replace("const showError = (e) => alert(e.message || e);", "const showError = (e) => demoToast(e.message || e);", 1)
     app = app.replace('if (!confirm("AI가 정한 카테고리를 모두 지우고 다시 분류할까요? 직접 정한 분류는 그대로 남아요.")) return;', "", 1)
+    assert "/*POLICIES*/" not in mock, "청년정책 목록을 데모에 넣지 못했어요"
     for needle in ("async function serverApi", "demoToast(e.message", "const state ="):
         assert needle in app, f"app.js 구조가 바뀌어 데모 변환에 실패: {needle}"
 
@@ -44,7 +47,9 @@ def build(out: Path) -> Path:
     body = re.sub(r'<script src="/static/app\.js"></script>', "", body)
     body = body.replace('<div class="app">', '<div class="app">\n  ' + BANNER, 1)
 
-    page = f"""<title>실지출 트래커 데모</title>
+    page = f"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실지출 트래커 데모</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 {head_links}
 <style>

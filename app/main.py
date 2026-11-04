@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import categories, db, service
+from . import categories, db, policy, service
 from .agent import report
 from .agent.client import LLMError, get_client
 
@@ -33,6 +33,13 @@ class NewCategoryIn(BaseModel):
     name: str
     emoji: str
     description: str = ""
+
+
+class PolicyProfileIn(BaseModel):
+    birth_year: int
+    region: str
+    status: str
+    lives_alone: bool
 
 
 class CategoryEditIn(BaseModel):
@@ -90,6 +97,20 @@ def create_app(db_path=None, llm_factory=get_client) -> FastAPI:
     async def upload(file: UploadFile = File(...), password: str | None = Form(None), conn=Depends(get_conn)):
         data = await file.read()
         return guard(service.import_file, conn, file.filename or "", data, llm_factory(), password or None)
+
+    @app.get("/api/policies")
+    def policies(month: str, conn=Depends(get_conn)):
+        profile = policy.get_profile(conn)
+        if not profile:
+            return {"profile": None, "regions": policy.REGIONS, "statuses": policy.STATUSES}
+        start, end = service.month_range(month)
+        spending = service.period_summary(conn, start, end)["by_category"]
+        return {"profile": profile, "regions": policy.REGIONS, "statuses": policy.STATUSES,
+                **policy.recommend(profile, spending, month_label=f"{int(month[5:7])}월")}
+
+    @app.put("/api/policies/profile")
+    def policy_profile(body: PolicyProfileIn, conn=Depends(get_conn)):
+        return guard(policy.set_profile, conn, body.birth_year, body.region, body.status, body.lives_alone)
 
     @app.get("/api/summary")
     def summary(month: str, conn=Depends(get_conn)):

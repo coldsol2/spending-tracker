@@ -69,22 +69,8 @@ const demo = {
   })),
   settlements: [],
   budgets: { 식비: 250000, 술: 200000, 유흥: 80000, 교통비: 80000, 쇼핑: 150000, 생활: 80000 },
-  reports: [{ week_start: "2026-10-26", content: `## 한 줄 요약
-이번 주 실지출은 **138,000원**으로, 지난 주(76,900원)보다 61,100원 늘었어요. 절반 가까이가 판교포차 술자리(64,000원)예요.
-
-## 예산 대비
-- **술**: 주간 예산 45,161원인데 판교포차에서 64,000원을 썼어요. 친구들 정산(이민수 32,000원)을 확정하면 32,000원으로 줄어 예산 안에 들어와요.
-- **유흥**: 스타벅스 세 번 16,400원으로, 주간 예산 18,065원을 거의 다 썼어요.
-
-## 지난 주 대비
-- 식비가 배달(교촌치킨 28,000원) 때문에 늘었어요. 정하늘님 정산 14,000원을 확정하면 내 몫은 14,000원이에요.
-
-## 이번 주에 줄일 수 있었던 곳
-1. **아침 커피**: 평일 스타벅스 세 번(16,400원) 중 두 번만 줄여도 약 11,000원 아껴요.
-2. **늦은 밤 편의점**: 술자리 뒤 CU 3,900원처럼 작은 지출이 반복돼요.
-
-## 다음 주 목표
-커피는 주 2회까지만, 남는 돈은 비상금으로 옮겨 보세요.` }],
+  reports: [],
+  policyProfile: null,
 };
 // 분류 확인 화면의 AI 추측 예시 (실제 앱은 앞뒤 거래·친구 정산·사용자 선택을 보고 만든다)
 const DEMO_GUESSES = {
@@ -171,6 +157,89 @@ function txnJson(t) {
     settled: confirmedIn.has(t.id) ? "confirmed" : null };
 }
 const brief = (t) => ({ id: t.id, occurred_at: t.occurred_at.slice(0, 16), description: t.description, amount: t.amount });
+
+// ---- 주간 보고서 (실제 앱은 Console 보고서 에이전트가 도구로 숫자를 받아 이 양식으로 쓴다) ----
+const DEMO_EMOJI = Object.fromEntries(DEMO_BUILTIN.map(([n, e]) => [n, e]));
+const wonText = (n) => `${Math.round(n).toLocaleString("ko-KR")}원`;
+const DEMO_TIPS = {
+  술: "2차는 건너뛰고 1차에서 마무리", 유흥: "커피는 학교 카페·텀블러 할인으로", 식비: "배달 대신 한 번은 포장·학식으로",
+  편의점: "소액 여러 번 대신 마트에서 한 번에", 교통비: "막차 전에 지하철·버스로", 쇼핑: "장바구니에 하루 묵혀 두고 사기",
+};
+
+function demoReport(ws) {
+  const we = plusDays(ws, 6);
+  const now = summarize(ws, we, 50), last = summarize(plusDays(ws, -7), plusDays(ws, -1));
+  const diff = now.total - last.total;
+  const cats = Object.entries(now.by_category).filter(([, v]) => v > 0);
+  const daily = Object.values(now.daily);
+  const days = ["월", "화", "수", "목", "금", "토", "일"];
+  const peak = daily.indexOf(Math.max(...daily));
+  const weekly = Object.fromEntries(Object.entries(demo.budgets).map(([c, v]) => [c, Math.round((v / monthDays(ws)) * 7)]));
+  const budgetRows = Object.entries(weekly).filter(([c]) => now.by_category[c])
+    .map(([c, b]) => [c, b, now.by_category[c]]).sort((a, b) => (b[2] - b[1]) - (a[2] - a[1]));
+  const allCats = [...new Set([...Object.keys(now.by_category), ...Object.keys(last.by_category)])]
+    .sort((a, b) => (now.by_category[b] || 0) - (now.by_category[a] || 0)).slice(0, 6);
+  const cuts = now.top.filter((t) => DEMO_TIPS[t.category]).slice(0, 2)
+    .map((t) => ({ ...t, save: Math.round((t.net * 0.4) / 100) * 100 }));
+  const over = budgetRows.find(([, b, s]) => s > b);
+  const row = (c) => `${DEMO_EMOJI[c] || ""} ${c}`.trim();
+  return [
+    "## 한 줄 요약",
+    `이번 주 실지출은 **${wonText(now.total)}**으로 지난주보다 **${wonText(Math.abs(diff))} ${diff >= 0 ? "더" : "적게"}** 썼어요.`,
+    "", "## 이번 주 소비",
+    "```chart", JSON.stringify({ type: "bar", title: "요일별 실지출", labels: days, values: daily }), "```",
+    `${days[peak]}요일에 가장 많이 썼어요 (${wonText(daily[peak])}).`, "",
+    "| 카테고리 | 실지출 | 비중 |", "|---|---:|---:|",
+    ...cats.map(([c, v]) => `| ${row(c)} | ${wonText(v)} | ${Math.round((v / now.total) * 100)}% |`),
+    "", "## 예산 대비",
+    "| 카테고리 | 예산 | 쓴 돈 | 남음/초과 |", "|---|---:|---:|---|",
+    ...budgetRows.map(([c, b, s]) => `| ${row(c)} | ${wonText(b)} | ${wonText(s)} | ${s > b ? `⚠️ ${wonText(s - b)} 초과` : `✅ ${wonText(b - s)} 남음`} |`),
+    "", "## 지난주 대비",
+    "```chart", JSON.stringify({ type: "compare", title: "지난주 vs 이번 주", labels: allCats,
+      this: allCats.map((c) => now.by_category[c] || 0), last: allCats.map((c) => last.by_category[c] || 0) }), "```",
+    "| 카테고리 | 지난주 | 이번 주 | 변화 |", "|---|---:|---:|---|",
+    ...allCats.map((c) => {
+      const a = last.by_category[c] || 0, b = now.by_category[c] || 0;
+      return `| ${row(c)} | ${wonText(a)} | ${wonText(b)} | ${b >= a ? "▲" : "▼"} ${wonText(Math.abs(b - a))} |`;
+    }),
+    "", "## 이번 주에 줄일 수 있었던 곳",
+    "| 결제 | 금액 | 이렇게 했다면 | 아낄 수 있던 돈 |", "|---|---:|---|---:|",
+    ...cuts.map((t) => `| ${t.description} (${Number(t.date.slice(8))}일) | ${wonText(t.net)} | ${DEMO_TIPS[t.category]} | ${wonText(t.save)} |`),
+    "", `이렇게 하면 한 주에 약 **${wonText(cuts.reduce((a, t) => a + t.save, 0))}**을 아낄 수 있었어요.`,
+    "", "## 다음 주 목표",
+    over ? `**${over[0]}${(over[0].charCodeAt(over[0].length - 1) - 0xac00) % 28 ? "은" : "는"} ${wonText(over[1])} 안쪽으로** — 이번 주보다 ${wonText(over[2] - over[1])}만 줄이면 돼요.`
+      : `**이번 주처럼 예산 안에서** — 지금 페이스면 충분해요.`,
+  ].join("\n");
+}
+
+// ---- 청년정책 (실제 앱의 app/policy.py와 같은 규칙, 목록은 빌드할 때 app/policies.json을 넣는다) ----
+const DEMO_POLICIES = /*POLICIES*/null;
+const POLICY_REGIONS = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기",
+  "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"];
+const POLICY_STATUSES = ["대학생", "휴학생", "취업준비", "직장인"];
+
+function recommendPolicies(profile, spending, monthLabel) {
+  const age = Number(DEMO_TODAY.slice(0, 4)) - profile.birth_year;
+  const names = Object.fromEntries(DEMO_POLICIES.policies.map((p) => [p.id, p.name]));
+  const items = [], closed = [];
+  for (const p of DEMO_POLICIES.policies) {
+    if (age < p.age[0] || age > p.age[1]) continue;
+    if (p.regions && !p.regions.includes(profile.region)) continue;
+    if (p.statuses && !p.statuses.includes(profile.status)) continue;
+    if (p.alone && !profile.lives_alone) continue;
+    const why = [`만 ${age}세`];
+    if (p.regions) why.push(`${profile.region} 거주`);
+    if (p.statuses) why.push(profile.status);
+    if (p.alone) why.push("자취");
+    const spent = p.spend ? (spending[p.spend.category] || 0) : 0;
+    const item = { ...p, reason: `${why.join(" · ")} 조건이 맞아요`,
+      spend_note: spent ? `${monthLabel} ${p.spend.category} ${spent.toLocaleString("ko-KR")}원 — ${p.spend.hint}` : null,
+      conflict_note: p.conflicts.length ? `${p.conflicts.map((c) => names[c]).join(", ")}와(과) 중복 신청은 안 돼요` : null };
+    (p.open ? items : closed).push(item);
+  }
+  items.sort((a, b) => (a.spend_note ? 0 : 1) - (b.spend_note ? 0 : 1) || b.value - a.value);
+  return { as_of: DEMO_POLICIES.as_of, note: DEMO_POLICIES.note, sources: DEMO_POLICIES.sources, age, items, closed };
+}
 
 class DemoError extends Error {}
 const fail = (msg) => { throw new DemoError(msg); };
@@ -302,7 +371,24 @@ function demoRoute(path, opts) {
     };
   }
   if (p === "/api/reports/auto") return { status: "no_ai", week_start: "2026-10-19" };
-  if (p === "/api/reports" && method === "GET") return demo.reports.map((r) => ({ ...r }));
+  if (p === "/api/reports" && method === "GET") {
+    if (!demo.reports.length) demo.reports.push({ week_start: "2026-10-26", content: demoReport("2026-10-26") });
+    return demo.reports.map((r) => ({ ...r }));
+  }
+  if (p === "/api/policies" && method === "GET") {
+    const base = { profile: demo.policyProfile, regions: POLICY_REGIONS, statuses: POLICY_STATUSES };
+    if (!demo.policyProfile) return base;
+    const month = url.searchParams.get("month");
+    const spending = summarize(`${month}-01`, `${month}-${String(monthDays(`${month}-01`)).padStart(2, "0")}`).by_category;
+    return { ...base, ...recommendPolicies(demo.policyProfile, spending, `${Number(month.slice(5, 7))}월`) };
+  }
+  if (p === "/api/policies/profile" && method === "PUT") {
+    if (!(body.birth_year >= 1950 && body.birth_year <= 2016)) fail("태어난 해를 다시 확인해 주세요.");
+    if (!POLICY_REGIONS.includes(body.region)) fail("사는 지역을 골라 주세요.");
+    if (!POLICY_STATUSES.includes(body.status)) fail("지금 상태를 골라 주세요.");
+    demo.policyProfile = { birth_year: body.birth_year, region: body.region, status: body.status, lives_alone: !!body.lives_alone };
+    return { ...demo.policyProfile };
+  }
   if (p === "/api/reports" && method === "POST") {
     if (!demo.reports.some((r) => r.week_start === body.week_start)) {
       fail("데모에서는 AI를 부르지 않아서, 미리 만들어 둔 이번 주 보고서만 볼 수 있어요.");

@@ -38,10 +38,10 @@ const md = (s) => `${Number(s.slice(5, 7))}.${Number(s.slice(8, 10))}`;
 // ---------- 화면 이동 ----------
 const loaders = {
   home: loadHome, txns: loadTransactions, day: loadDay, settle: loadSettlements, report: loadReport,
-  upload: async () => {}, budget: loadBudgets,
+  upload: async () => {}, budget: loadBudgets, policy: loadPolicy,
 };
 // 탭바에 없는 화면: 뒤로 가기로 돌아갈 곳을 바꾸지 않는다
-const SUB_VIEWS = ["upload", "budget", "settle"];
+const SUB_VIEWS = ["upload", "budget", "settle", "policy"];
 
 function go(name) {
   if (name !== state.view) state.prev = SUB_VIEWS.includes(state.view) ? state.prev : state.view;
@@ -96,7 +96,7 @@ async function loadHome() {
   const budgetTotal = Object.entries(s.budgets).filter(([c]) => c !== "제외").reduce((a, [, v]) => a + v, 0);
   const cats = Object.entries(s.by_category).filter(([, v]) => v > 0);
 
-  renderCols($("#cat-cols"), cats, s.total, "이 달의 지출이 아직 없어요.");
+  renderPie($("#cat-cols"), cats, s.total, "이 달의 지출이 아직 없어요.");
 
   $("#total").textContent = num(s.total);
   const back = s.gross - s.total;
@@ -115,6 +115,7 @@ async function loadHome() {
 
   state.home = { s, badges };
   renderFeature(s, badges);
+  renderPolicyCard();
   renderWeek(s, budgetTotal);
   renderTiles(s, cats);
   $("#top-list").innerHTML = s.top.length ? s.top.slice(0, 6).map((t) => row({
@@ -135,6 +136,28 @@ function renderCols(box, cats, total, emptyText) {
       <div class="bar" style="height:${Math.max(6, Math.round((v / max) * 110))}px;--c:${cat(c).c}"></div>
       <div class="n">${esc(c)}</div><div class="p">${Math.round((v / total) * 100)}%</div>
     </div>`).join("") : (emptyText ? `<div class="empty">${emptyText}</div>` : "");
+}
+
+// 카테고리별 실지출 원그래프 (가운데가 빈 도넛) + 옆에 범례
+function renderPie(box, cats, total, emptyText) {
+  box.className = "cat-pie";
+  box.setAttribute("aria-label", cats.map(([c, v]) => `${c} ${won(v)}`).join(", ") || "카테고리별 지출 없음");
+  if (!cats.length) { box.innerHTML = `<div class="empty">${emptyText}</div>`; return; }
+  let at = 0;
+  const stops = [], labels = [];
+  cats.forEach(([c, v]) => {
+    const from = at, pct = Math.round((v / total) * 100);
+    at += (v / total) * 360;
+    stops.push(`${cat(c).c} ${from}deg ${at}deg`);
+    // 조각 가운데(도넛 띠 한가운데)에 비율을 적는다. 너무 얇은 조각은 범례로만 보여준다
+    if (pct >= 4) {
+      const rad = (((from + at) / 2) - 90) * Math.PI / 180;
+      labels.push(`<span class="pct" style="left:${50 + 38 * Math.cos(rad)}%;top:${50 + 38 * Math.sin(rad)}%">${pct}%</span>`);
+    }
+  });
+  box.innerHTML = `<div class="pie" style="background:conic-gradient(${stops.join(", ")})">${labels.join("")}<div class="hole"><b>${cats.length}</b><span>카테고리</span></div></div>
+    <ul class="legend">${cats.map(([c, v]) => `<li><i style="--c:${cat(c).c}"></i><span class="n">${cat(c).e} ${esc(c)}</span>
+      <span class="v">${short(v)}</span><span class="p">${Math.round((v / total) * 100)}%</span></li>`).join("")}</ul>`;
 }
 
 // ---------- 지난 주 보고서 자동 작성 ----------
@@ -734,6 +757,81 @@ function drawReportCharts(root) {
     }));
   });
 }
+
+// ---------- 청년정책 ----------
+const FIELD_EMOJI = { 주거: "🏠", 자산: "💰", 일자리: "💼", 교통: "🚇", 문화: "🎟️", 학업: "🎓", 건강: "🌿", 생활: "🎁" };
+
+async function renderPolicyCard() {
+  const box = $("#policy-card");
+  try {
+    const r = await api(`/api/policies?month=${state.month}`);
+    const linked = r.items?.find((i) => i.spend_note);
+    const sub = !r.profile ? "태어난 해·지역 등 4가지만 고르면 돼요"
+      : linked ? `${linked.name} · ${linked.spend.category}와 이어져요`
+      : r.items.slice(0, 2).map((i) => i.name).join(", ");
+    box.innerHTML = `<button class="policy-card" data-go="policy">
+      <span class="ico">🎁</span>
+      <span class="body"><b>${r.profile ? `받을 수 있는 청년정책 ${r.items.length}개` : "나한테 맞는 청년정책 찾기"}</b>
+        <span class="sub">${esc(sub)}</span></span>
+      ${svg("i-arrow")}</button>`;
+  } catch { box.innerHTML = ""; }
+}
+
+function policyCard(i, closed) {
+  return `<article class="policy ${closed ? "closed" : ""}">
+    <div class="p-head"><span class="p-field">${FIELD_EMOJI[i.field] || "📌"} ${esc(i.field)}</span><span class="p-org">${esc(i.org)}</span></div>
+    <h3>${esc(i.name)}</h3>
+    <p class="p-amount">${esc(i.amount)}</p>
+    <p class="p-sum">${esc(i.summary)}</p>
+    ${i.spend_note ? `<p class="p-spend">💡 ${esc(i.spend_note)}</p>` : ""}
+    <ul class="p-tags">
+      <li class="ok">✓ ${esc(i.reason)}</li>
+      ${i.income ? `<li class="warn">소득 기준 확인: ${esc(i.income)}</li>` : ""}
+      ${i.conflict_note ? `<li class="warn">${esc(i.conflict_note)}</li>` : ""}
+      <li>🗓️ ${esc(i.period)}</li>
+    </ul>
+    <a class="btn ${closed ? "btn-soft" : "btn-ink"} btn-block" href="${esc(i.apply.url)}" target="_blank" rel="noopener">${esc(i.apply.name)}에서 ${closed ? "다음 모집 보기" : "신청하기"}</a>
+  </article>`;
+}
+
+async function loadPolicy() {
+  const r = await api(`/api/policies?month=${state.month}`);
+  $("#pf-region").innerHTML = `<option value="">고르기</option>` + r.regions.map((x) => `<option>${x}</option>`).join("");
+  $("#pf-status").innerHTML = `<option value="">고르기</option>` + r.statuses.map((x) => `<option>${x}</option>`).join("");
+  const p = r.profile;
+  if (p) {
+    $("#pf-year").value = p.birth_year;
+    $("#pf-region").value = p.region;
+    $("#pf-status").value = p.status;
+    $("#pf-alone").checked = p.lives_alone;
+  }
+  $("#policy-form").hidden = !!p;
+  $("#pf-summary").hidden = !p;
+  if (!p) { $("#policy-list").innerHTML = ""; $("#policy-note").textContent = ""; return; }
+  $("#pf-summary").innerHTML = `<span>${p.birth_year}년생 (만 ${r.age}세) · ${esc(p.region)} · ${esc(p.status)}${p.lives_alone ? " · 자취" : ""}</span>
+    <button class="btn-ghost btn" id="pf-edit" type="button">바꾸기</button>`;
+  const head = (t, n) => `<div class="card-title" style="margin:18px 4px 10px"><h2>${t}</h2>${n ? `<span class="aside">${n}개</span>` : ""}</div>`;
+  $("#policy-list").innerHTML = (r.items.length ? head("받을 수 있어요", r.items.length) + r.items.map((i) => policyCard(i, false)).join("")
+      : `<div class="empty">지금 조건으로 맞는 정책이 없어요.</div>`)
+    + (r.closed.length ? head("이번 모집은 끝났어요") + r.closed.map((i) => policyCard(i, true)).join("") : "");
+  $("#policy-note").innerHTML = `${esc(r.note)} (${md(r.as_of)} 기준)<br>참고: `
+    + r.sources.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`).join(" · ");
+}
+
+$("#policy-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/policies/profile", { method: "PUT", json: {
+      birth_year: Number($("#pf-year").value), region: $("#pf-region").value,
+      status: $("#pf-status").value, lives_alone: $("#pf-alone").checked } });
+    await loadPolicy();
+  } catch (err) { showError(err); }
+});
+document.addEventListener("click", (e) => {
+  if (e.target.id !== "pf-edit") return;
+  $("#policy-form").hidden = false;
+  $("#pf-summary").hidden = true;
+});
 
 // ---------- 시작 ----------
 async function init() {

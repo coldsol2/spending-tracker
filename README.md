@@ -137,6 +137,12 @@ python -m app.agent.evaluate --db data/eval.db --engine both  # 나간 돈: 기�
 python -m app.agent.evaluate --db data/eval.db --target in    # 들어온 돈: 정산·용돈·알바비·환불·기타 수입
 ```
 
+## 청년정책 추천 (데모)
+
+- 홈의 "청년정책" 카드 → 정책 화면. 태어난 해·지역·상태·자취 여부로 받을 수 있는 정책을 보여줘요.
+- 정책 목록은 직접 조사해 정리한 `app/policies.json` (기준일 표시, 공공 API는 쓰지 않음). 걸러내기는 `app/policy.py`.
+- 소득 조건은 거르지 않고 "소득 기준 확인"으로 보여줘요. 그 달 소비와 이어지는 정책(교통비 → K-패스 등)은 맨 앞에.
+
 ## AI 구성
 
 - 기본 모델은 **Claude Haiku 5.5** (`.env`의 `CLAUDE_MODEL`로 바꿀 수 있음).

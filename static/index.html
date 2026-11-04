@@ -64,6 +64,7 @@
     </div>
 
     <div id="feature"></div>
+    <div id="policy-card"></div>
 
     <div class="card">
       <div class="card-title"><h2>이번 주</h2><span class="aside" id="week-range"></span></div>
@@ -174,6 +175,29 @@
       <div class="card-title"><h2>확정된 정산·결제 취소</h2><span class="aside" id="confirmed-count"></span></div>
       <div id="confirmed-list"></div>
     </div>
+  </section>
+
+  <!-- 청년정책 -->
+  <section class="view" id="view-policy">
+    <header class="topbar">
+      <button class="icon-btn" data-back aria-label="뒤로"><svg><use href="#i-back"/></svg></button>
+      <div style="flex:1"><h1>청년정책</h1><p class="sub">내 상황에 맞는 지원을 모았어요.</p></div>
+    </header>
+
+    <div class="card" id="policy-profile">
+      <div class="card-title"><h2>내 정보</h2><span class="aside">이 기기에만 저장돼요</span></div>
+      <form id="policy-form" class="policy-form">
+        <label class="field">태어난 해<input type="number" id="pf-year" min="1950" max="2016" placeholder="2003" required></label>
+        <label class="field">사는 곳<select id="pf-region" required></select></label>
+        <label class="field">지금 나는<select id="pf-status" required></select></label>
+        <label class="pf-alone"><input type="checkbox" id="pf-alone"> 부모님과 따로 살아요 (자취)</label>
+        <button class="btn btn-ink btn-block" type="submit">맞는 정책 찾기</button>
+      </form>
+      <p class="pf-summary" id="pf-summary" hidden></p>
+    </div>
+
+    <div id="policy-list"></div>
+    <p class="policy-note" id="policy-note"></p>
   </section>
 
   <!-- 보고서 -->

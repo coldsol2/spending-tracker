@@ -1,0 +1,177 @@
+{
+  "as_of": "2026-11-04",
+  "note": "발표 데모용으로 직접 조사해 정리한 목록이에요. 금액·자격·일정은 바뀔 수 있으니 신청 전에 공식 누리집에서 꼭 확인하세요.",
+  "sources": [
+    {"name": "온통청년 (국무조정실)", "url": "https://www.youthcenter.go.kr/"},
+    {"name": "청년몽땅정보통 (서울시)", "url": "https://youth.seoul.go.kr/"},
+    {"name": "KB Think 2026 청년정책 가이드", "url": "https://kbthink.com/youth-guide.html"},
+    {"name": "웰로 2026 하반기 청년정책 총정리", "url": "https://www.welfarehello.com/"},
+    {"name": "서울시 미디어허브 청년월세 안내", "url": "https://mediahub.seoul.go.kr/archives/2018004"}
+  ],
+  "policies": [
+    {
+      "id": "rent-national", "name": "청년월세 특별지원", "org": "국토교통부", "field": "주거",
+      "amount": "월 최대 20만원 · 최대 24개월", "value": 4800000,
+      "summary": "부모와 따로 사는 무주택 청년의 실제 월세를 매달 지원해요. 생애 1회.",
+      "age": [19, 34], "regions": null, "statuses": null, "alone": true,
+      "income": "청년가구 중위소득 60% 이하, 원가구 100% 이하",
+      "period": "상시 신청 (2026년부터 상시 사업)", "open": true,
+      "apply": {"name": "복지로", "url": "https://www.bokjiro.go.kr/"},
+      "spend": null, "conflicts": ["rent-seoul"]
+    },
+    {
+      "id": "rent-seoul", "name": "서울시 청년월세지원", "org": "서울특별시", "field": "주거",
+      "amount": "월 최대 20만원 · 12개월", "value": 2400000,
+      "summary": "서울에 사는 무주택 1인 가구 청년에게 월세를 지원해요. 소득 구간별 추첨.",
+      "age": [19, 39], "regions": ["서울"], "statuses": null, "alone": true,
+      "income": "가구 기준 중위소득 150% 이하",
+      "period": "매년 상반기 모집 · 2026년 모집(5.6~5.19)은 마감", "open": false,
+      "apply": {"name": "서울주거포털", "url": "https://housing.seoul.go.kr/"},
+      "spend": null, "conflicts": ["rent-national"]
+    },
+    {
+      "id": "jeonse-loan", "name": "청년전용 버팀목 전세자금대출", "org": "국토교통부 · 주택도시기금", "field": "주거",
+      "amount": "낮은 금리로 전세보증금 대출", "value": 0,
+      "summary": "무주택 청년 세대주가 전세를 구할 때 시중보다 낮은 금리로 빌릴 수 있어요. 한도·금리는 공고 확인.",
+      "age": [19, 34], "regions": null, "statuses": null, "alone": true,
+      "income": "연소득·자산 기준 있음",
+      "period": "상시 (취급 은행)", "open": true,
+      "apply": {"name": "주택도시기금", "url": "https://nhuf.molit.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "future-savings", "name": "청년미래적금", "org": "금융위원회 · 서민금융진흥원", "field": "자산",
+      "amount": "월 최대 50만원 · 3년 + 정부기여금", "value": 0,
+      "summary": "청년도약계좌 후속 상품. 3년 동안 저축하면 정부기여금과 비과세 혜택을 더해 줘요.",
+      "age": [19, 34], "regions": null, "statuses": null, "alone": false,
+      "income": "개인소득·가구소득 기준 있음",
+      "period": "모집 기간에 취급 은행 앱에서 가입", "open": true,
+      "apply": {"name": "서민금융진흥원", "url": "https://www.kinfa.or.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "tomorrow-savings", "name": "청년내일저축계좌", "org": "보건복지부", "field": "자산",
+      "amount": "월 10만원 저축하면 정부가 10~30만원 더", "value": 1200000,
+      "summary": "일하는 저소득 청년이 3년간 저축하면 정부가 같은 만큼(이상) 적립해 줘요.",
+      "age": [19, 34], "regions": null, "statuses": ["직장인"], "alone": false,
+      "income": "근로·사업소득이 있고 가구 소득 기준 충족 (알바 포함)",
+      "period": "매년 모집 공고 (복지로)", "open": true,
+      "apply": {"name": "복지로", "url": "https://www.bokjiro.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "job-support", "name": "국민취업지원제도", "org": "고용노동부", "field": "일자리",
+      "amount": "월 최대 60만원 · 6개월 + 취업 지원", "value": 3600000,
+      "summary": "구직 중인 청년에게 구직촉진수당과 맞춤 취업 상담·훈련을 함께 줘요. 2026년 월 60만원으로 올랐어요.",
+      "age": [15, 34], "regions": null, "statuses": ["취업준비"], "alone": false,
+      "income": "가구 중위소득 120% 이하, 재산 5억원 이하 (1유형)",
+      "period": "상시 신청", "open": true,
+      "apply": {"name": "고용24", "url": "https://www.work24.go.kr/"},
+      "spend": null, "conflicts": ["seoul-allowance"]
+    },
+    {
+      "id": "seoul-allowance", "name": "서울 청년수당", "org": "서울특별시", "field": "일자리",
+      "amount": "월 50만원 · 최대 6개월", "value": 3000000,
+      "summary": "서울에 사는 미취업 청년에게 구직 활동비와 멘토링·특강을 지원해요.",
+      "age": [19, 34], "regions": ["서울"], "statuses": ["취업준비"], "alone": false,
+      "income": "소득 기준 있음",
+      "period": "매년 모집 공고 (청년몽땅정보통)", "open": true,
+      "apply": {"name": "청년몽땅정보통", "url": "https://youth.seoul.go.kr/"},
+      "spend": null, "conflicts": ["job-support"]
+    },
+    {
+      "id": "learning-card", "name": "국민내일배움카드", "org": "고용노동부", "field": "일자리",
+      "amount": "직업훈련비 5년간 300~500만원", "value": 1000000,
+      "summary": "코딩·디자인·자격증 같은 직업훈련 수강료를 카드로 지원해요. 졸업 예정 대학생도 가능.",
+      "age": [15, 75], "regions": null, "statuses": ["취업준비", "직장인", "대학생", "휴학생"], "alone": false,
+      "income": null,
+      "period": "상시 신청", "open": true,
+      "apply": {"name": "고용24", "url": "https://www.work24.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "job-leap", "name": "청년일자리도약장려금 (청년 근속지원)", "org": "고용노동부", "field": "일자리",
+      "amount": "비수도권 취업 후 근속하면 2년간 최대 720만원", "value": 3600000,
+      "summary": "비수도권 중소기업에 정규직으로 취업해 6개월 이상 다니면 청년 본인에게 근속 지원금을 줘요.",
+      "age": [15, 34], "regions": ["부산", "대구", "광주", "대전", "울산", "세종", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"],
+      "statuses": ["취업준비", "직장인"], "alone": false,
+      "income": null,
+      "period": "취업 후 고용24에서 신청", "open": true,
+      "apply": {"name": "고용24", "url": "https://www.work24.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "kpass", "name": "K-패스 (모두의 카드)", "org": "국토교통부", "field": "교통",
+      "amount": "청년은 대중교통비의 30% 환급", "value": 300000,
+      "summary": "버스·지하철을 탈 때마다 일부를 돌려줘요. 2026년부터 한 달 기준액을 넘긴 금액은 전액 돌려받는 정액 방식도 자동 적용.",
+      "age": [19, 34], "regions": null, "statuses": null, "alone": false,
+      "income": null,
+      "period": "상시 (K-패스 카드 발급 후 등록)", "open": true,
+      "apply": {"name": "K-패스", "url": "https://korea-pass.kr/"},
+      "spend": {"category": "교통비", "hint": "버스·지하철 이용분의 30%를 돌려받을 수 있어요 (택시는 제외)"},
+      "conflicts": []
+    },
+    {
+      "id": "climate-card", "name": "기후동행카드 청년 할인", "org": "서울특별시", "field": "교통",
+      "amount": "월 정기권 7천원 할인", "value": 84000,
+      "summary": "서울 대중교통·따릉이 무제한 정기권을 청년은 더 싸게 써요. K-패스와 비교해서 유리한 쪽으로.",
+      "age": [19, 39], "regions": ["서울"], "statuses": null, "alone": false,
+      "income": null,
+      "period": "상시 (모바일 티머니·실물카드)", "open": true,
+      "apply": {"name": "서울시 기후동행카드", "url": "https://news.seoul.go.kr/traffic/archives/510731"},
+      "spend": {"category": "교통비", "hint": "지하철·버스를 자주 탄다면 정기권이 더 쌀 수 있어요"},
+      "conflicts": []
+    },
+    {
+      "id": "culture-pass", "name": "청년문화예술패스", "org": "문화체육관광부", "field": "문화",
+      "amount": "수도권 15만원 · 비수도권 20만원 (포인트)", "value": 150000,
+      "summary": "공연·전시·영화 관람비와 책값으로 쓸 수 있는 포인트를 줘요. 생애 1회.",
+      "age": [19, 20], "regions": null, "statuses": null, "alone": false,
+      "income": null,
+      "period": "2026년 발급분 · 예산 소진 시 마감", "open": true,
+      "apply": {"name": "청년문화예술패스", "url": "https://youthculturepass.or.kr/"},
+      "spend": {"category": "유흥", "hint": "영화·공연에 쓰던 돈을 포인트로 대신 낼 수 있어요"},
+      "conflicts": []
+    },
+    {
+      "id": "national-scholarship", "name": "국가장학금", "org": "한국장학재단", "field": "학업",
+      "amount": "소득구간별 등록금 지원", "value": 0,
+      "summary": "소득구간에 따라 등록금을 지원해요. 매 학기 신청해야 해요.",
+      "age": [0, 99], "regions": null, "statuses": ["대학생", "휴학생"], "alone": false,
+      "income": "소득구간(학자금 지원구간) 기준",
+      "period": "학기마다 신청 (다음 학기 1차 신청은 보통 11~12월)", "open": true,
+      "apply": {"name": "한국장학재단", "url": "https://www.kosaf.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "work-scholarship", "name": "국가근로장학금", "org": "한국장학재단", "field": "학업",
+      "amount": "교내·외 근로하고 시급으로 장학금", "value": 0,
+      "summary": "학기 중·방학에 학교나 기관에서 일하고 장학금을 받아요. 알바 대신 고려해 볼 만해요.",
+      "age": [0, 99], "regions": null, "statuses": ["대학생"], "alone": false,
+      "income": "소득구간 기준 있음",
+      "period": "학기마다 신청", "open": true,
+      "apply": {"name": "한국장학재단", "url": "https://www.kosaf.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "seoul-mind", "name": "서울 청년 마음건강 지원", "org": "서울특별시", "field": "건강",
+      "amount": "전문 심리상담 무료 지원", "value": 0,
+      "summary": "마음이 지친 서울 청년에게 전문 심리상담을 무료로 연결해 줘요.",
+      "age": [19, 39], "regions": ["서울"], "statuses": null, "alone": false,
+      "income": null,
+      "period": "모집 공고 (청년몽땅정보통)", "open": true,
+      "apply": {"name": "청년몽땅정보통", "url": "https://youth.seoul.go.kr/"},
+      "spend": null, "conflicts": []
+    },
+    {
+      "id": "gyeonggi-basic", "name": "경기 청년기본소득", "org": "경기도", "field": "생활",
+      "amount": "분기 25만원 · 연 최대 100만원 (지역화폐)", "value": 1000000,
+      "summary": "경기도에 사는 만 24세 청년에게 소득과 상관없이 지역화폐를 줘요.",
+      "age": [24, 24], "regions": ["경기"], "statuses": null, "alone": false,
+      "income": null,
+      "period": "분기별 신청", "open": true,
+      "apply": {"name": "경기도 잡아바", "url": "https://apply.jobaba.net/"},
+      "spend": null, "conflicts": []
+    }
+  ]
+}
