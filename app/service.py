@@ -238,10 +238,10 @@ def month_range(month: str) -> tuple[date, date]:
 # ---- 거래 ----
 
 # 사용자가 아직 정하지 않았고, AI 분류를 믿기 어려운 출금: 송금·기타, AI가 확신하지 못한 것,
-# 사람·페이처럼 거래마다 용도가 다른 이름
+# 사람·페이처럼 거래마다 용도가 다른 이름, 에이전트가 거래 단위로 보고도 확신하지 못한 것(low)
 NEEDS_REVIEW = (
     "t.direction = 'out' AND t.reviewed = 0 AND (t.category IS NULL OR t.category IN ('송금', '기타') "
-    "OR COALESCE(m.varies, 0) = 1 OR COALESCE(m.confident, 1) = 0)"
+    "OR COALESCE(m.varies, 0) = 1 OR COALESCE(m.confident, 1) = 0 OR t.ai_confidence = 'low')"
 )
 TXN_SELECT = (
     "SELECT t.*, COALESCE(m.varies, 0) AS varies, "
@@ -311,10 +311,15 @@ def classify_income_pending(conn: sqlite3.Connection, llm) -> int:
 
 
 def guess_pending(conn: sqlite3.Connection, llm) -> int:
-    """가게 이름만으로 정하지 못한 거래(분류 확인 목록)를 거래 하나씩 앞뒤 상황까지 보고 추측한다."""
+    """거래 하나씩 앞뒤 상황까지 보고 추측한다.
+    기본은 가게 이름만으로 정하지 못한 거래(분류 확인 목록)만, GUESS_SCOPE=all이면 사용자가 정하지 않은
+    나간 돈 전부(제외 빼고)를 맡긴다. 정답 데이터 채점에서 전부 맡긴 v8이 69%로, 가게 이름 분류 + 애매한
+    거래만 맡긴 흐름(64%)보다 높았다."""
+    where = (f"({NEEDS_REVIEW})" if os.environ.get("GUESS_SCOPE", "review") != "all" else
+             f"t.direction = 'out' AND t.reviewed = 0 AND COALESCE(t.category, '') != '{cat_agent.EXCLUDED}'")
     ids = [r["id"] for r in conn.execute(
         "SELECT t.id FROM transactions t LEFT JOIN merchant_categories m ON m.merchant = t.description "
-        f"WHERE {NEEDS_REVIEW} AND t.ai_guess IS NULL")]
+        f"WHERE {where} AND t.ai_guess IS NULL")]
     if not ids:
         return 0
     return guess.save(conn, _guess(conn, llm, ids))

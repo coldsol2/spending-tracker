@@ -150,6 +150,7 @@ python -m app.agent.evaluate --db data/eval.db --target in    # 들어온 돈: �
 - 어려운 거래는 Claude 콘솔에서 만든 **분류 전용 에이전트**(Managed Agents)에게 맡길 수 있어요(`app/agent/managed.py`).
   에이전트는 앱이 주는 거래 조회 도구(`app/agent/agent_tools.py`)로 필요한 만큼 더 찾아봐요.
   - `.env`에 `GUESS_ENGINE=agent`, `AGENT_VERSION=8`을 넣으면 분류 확인 거래를 에이전트 v8이 추측해요.
+    `GUESS_SCOPE=all`이면 사용자가 정하지 않은 나간 돈 전부를 맡겨요(채점 69% vs 애매한 거래만 64%). 확신 낮은 답은 분류 확인에 올라가요.
     에이전트가 실패하거나 빠뜨린 거래는 기존 API가 대신 추측해서 업로드는 멈추지 않아요.
   - 분류 규칙은 스킬로 따로 둬요: `.claude/skills/transaction-categorizer/SKILL.md` (콘솔에 올려 에이전트에 붙임).
   - 검증 결과: 정답 372건 기준 에이전트 v8 69%, 기존 에이전트 55%, Haiku 단독 63% — `docs/에이전트_v8_성능검증.pdf`.

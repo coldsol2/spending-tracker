@@ -110,3 +110,23 @@ def test_agent_failure_falls_back_to_api(conn, monkeypatch):
     llm = FakeLLM({"GuessResult": lambda p: GuessResult(guesses=[
         Guess(txn_id=t["txn_id"], category="편의점", confidence="high", reason="api") for t in p["targets"]])})
     assert service.guess_pending(conn, llm) == 3  # 업로드는 멈추지 않는다
+
+
+def test_scope_all_sends_every_unreviewed_payment_and_low_goes_to_review(conn, monkeypatch):
+    """GUESS_SCOPE=all: 가게 이름이 분명한 결제도 거래 단위로 추측하고, 확신 low는 분류 확인에 올린다."""
+    evening(conn)
+    add_out(conn, "GS25", 3000, "2026-10-20 09:00:00", category="편의점", h="gs")
+    add_out(conn, "적금 이체", 100000, "2026-10-20 10:00:00", category="제외", h="sv")
+    cat.remember(conn, "GS25", "편의점", source="ai")
+    conn.commit()
+    monkeypatch.setenv("GUESS_SCOPE", "all")
+    asked = []
+
+    def handle(p):
+        asked.extend(t["name"] for t in p["targets"])
+        return GuessResult(guesses=[Guess(txn_id=t["txn_id"], category="편의점",
+                                          confidence="low" if t["name"] == "GS25" else "high", reason="r")
+                                    for t in p["targets"]])
+    service.guess_pending(conn, FakeLLM({"GuessResult": handle}))
+    assert "GS25" in asked and "만화카페" in asked and "적금 이체" not in asked  # 제외는 건드리지 않는다
+    assert "gs" in {t["source_hash"] for t in service.list_review(conn)}  # low → 사용자 확인
