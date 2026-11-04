@@ -7,10 +7,23 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const svg = (id) => `<svg><use href="#${id}"/></svg>`;
 
 // 카테고리 색·이모지는 서버(설정에서 사용자가 바꾸거나 추가한 것)에서 받는다. 받은 돈 줄에만 쓰는 '입금'은 고정
-const CATS = { 기타: { c: "#cfc4e0", e: "📦" }, 입금: { c: "#ece4fb", e: "💜" } };
+// ---------- 카테고리 아이콘·색 (화면에서만 바꾼다. 서버의 이모지·색은 그대로 두고 여기서 덮어쓴다) ----------
+// 기본 카테고리는 이름으로, 내가 만든 카테고리는 고른 이모지로 아이콘을 찾는다. 못 찾으면 c-tag
+const CAT_ICON = { 식비: "c-meal", 편의점: "c-store", 술: "c-beer", 유흥: "c-game", 구독료: "c-repeat", 교통비: "c-bus",
+  쇼핑: "c-bag", 생활: "c-bottle", 송금: "c-send", 기타: "c-box", 제외: "c-pause", 입금: "c-heart" };
+const CAT_COLOR = { 식비: "#ffc59c", 편의점: "#ffdf80", 술: "#f6aec4", 유흥: "#c6b2f6", 구독료: "#d8ccf7", 교통비: "#fde3a0",
+  쇼핑: "#f8c3d4", 생활: "#e3d9fa", 송금: "#ffd6bd", 기타: "#e2dcec", 제외: "#efebf3", 입금: "#e9e0fb" };
+// 새 카테고리를 만들 때 고르는 아이콘 (서버에는 짝이 되는 이모지로 저장된다)
+const ICON_IDEAS = [["🏋️", "c-dumbbell"], ["📚", "c-book"], ["✈️", "c-plane"], ["🐶", "c-paw"], ["🎁", "c-gift"], ["💄", "c-sparkle"],
+  ["🎵", "c-music"], ["☕", "c-cup"], ["🍰", "c-cake"], ["🏠", "c-house"], ["💊", "c-pill"], ["🎓", "c-cap"]];
+const noVS = (s) => String(s || "").replace(/\uFE0F/g, "");
+const ICON_BY_EMOJI = Object.fromEntries(ICON_IDEAS.map(([e, id]) => [noVS(e), id]));
+const ico = (id) => `<svg class="ci" aria-hidden="true"><use href="#${id}"/></svg>`;
+const catLook = (name, emoji, color) => ({ c: CAT_COLOR[name] || color || "#e2dcec", e: ico(CAT_ICON[name] || ICON_BY_EMOJI[noVS(emoji)] || "c-tag") });
+const CATS = { 기타: catLook("기타"), 입금: catLook("입금") };
 function applyCategories(info) {
   for (const k of Object.keys(CATS)) if (!["기타", "입금"].includes(k)) delete CATS[k];
-  info.forEach((c) => { CATS[c.name] = { c: c.color, e: c.emoji }; });
+  info.forEach((c) => { CATS[c.name] = catLook(c.name, c.emoji, c.color); });
 }
 const cat = (name) => CATS[name || "기타"] || CATS.기타;
 const CONFIDENCE = { high: "확실해요", medium: "그럴듯해요", low: "단서가 부족해요" };
@@ -139,26 +152,44 @@ function renderCols(box, cats, total, emptyText) {
 }
 
 // 카테고리별 실지출 원그래프 (가운데가 빈 도넛) + 옆에 범례
+// 홈 원그래프: 많이 쓴 3개만 조각으로, 나머지는 '기타'로 묶는다. 전체는 '자세히 보기'를 눌러야 보인다
+// 색은 style.css의 --pie-1~3, --pie-rest에서 바꾼다
+const PIE_COLORS = ["var(--pie-1)", "var(--pie-2)", "var(--pie-3)"], PIE_REST = "var(--pie-rest)";
 function renderPie(box, cats, total, emptyText) {
   box.className = "cat-pie";
   box.setAttribute("aria-label", cats.map(([c, v]) => `${c} ${won(v)}`).join(", ") || "카테고리별 지출 없음");
   if (!cats.length) { box.innerHTML = `<div class="empty">${emptyText}</div>`; return; }
+  const top = cats.filter(([c]) => c !== "기타").slice(0, 3);
+  const restSum = total - top.reduce((a, [, v]) => a + v, 0);
+  const slices = top.map(([c, v], i) => ({ name: c, v, color: PIE_COLORS[i], icon: cat(c).e }));
+  if (restSum > 0) slices.push({ name: "기타", v: restSum, color: PIE_REST, icon: cat("기타").e });
   let at = 0;
   const stops = [], labels = [];
-  cats.forEach(([c, v]) => {
-    const from = at, pct = Math.round((v / total) * 100);
-    at += (v / total) * 360;
-    stops.push(`${cat(c).c} ${from}deg ${at}deg`);
-    // 조각 가운데(도넛 띠 한가운데)에 비율을 적는다. 너무 얇은 조각은 범례로만 보여준다
+  slices.forEach((s) => {
+    const from = at, pct = Math.round((s.v / total) * 100);
+    at += (s.v / total) * 360;
+    stops.push(`${s.color} ${from}deg ${at}deg`);
     if (pct >= 4) {
       const rad = (((from + at) / 2) - 90) * Math.PI / 180;
       labels.push(`<span class="pct" style="left:${50 + 38 * Math.cos(rad)}%;top:${50 + 38 * Math.sin(rad)}%">${pct}%</span>`);
     }
   });
+  const pct = (v) => Math.round((v / total) * 100);
   box.innerHTML = `<div class="pie" style="background:conic-gradient(${stops.join(", ")})">${labels.join("")}<div class="hole"><b>${cats.length}</b><span>카테고리</span></div></div>
-    <ul class="legend">${cats.map(([c, v]) => `<li><i style="--c:${cat(c).c}"></i><span class="n">${cat(c).e} ${esc(c)}</span>
-      <span class="v">${short(v)}</span><span class="p">${Math.round((v / total) * 100)}%</span></li>`).join("")}</ul>`;
+    <ul class="legend">${slices.map((s) => `<li><i style="--c:${s.color}"></i><span class="n">${s.icon}${esc(s.name)}</span>
+      <span class="v">${short(s.v)}</span><span class="p">${pct(s.v)}%</span></li>`).join("")}</ul>
+    ${cats.length > top.length ? `<button type="button" class="pie-more" aria-expanded="false">자세히 보기</button>
+    <ul class="pie-all" hidden>${cats.map(([c, v]) => `<li><span class="n">${cat(c).e}${esc(c)}</span>
+      <span class="v">${won(v)}</span><span class="p">${pct(v)}%</span></li>`).join("")}</ul>` : ""}`;
 }
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".pie-more");
+  if (!b) return;
+  const list = b.nextElementSibling;
+  list.hidden = !list.hidden;
+  b.textContent = list.hidden ? "자세히 보기" : "접기";
+  b.setAttribute("aria-expanded", String(!list.hidden));
+});
 
 // ---------- 지난 주 보고서 자동 작성 ----------
 // 본 보고서는 브라우저에 기억해 두고 홈 카드를 다시 띄우지 않는다 (저장이 막힌 환경이면 매번 보일 뿐)
@@ -561,16 +592,19 @@ drop.addEventListener("drop", (e) => {
 async function loadBudgets() {
   const b = await api("/api/budgets");
   $("#budget-form").innerHTML = state.meta.categories.filter((c) => c !== "제외").map((c) => `<label class="set-row">
-      <span class="em" style="--c:${cat(c).c}">${esc(cat(c).e)}</span><span class="name">${esc(c)}</span>
+      <span class="em" style="--c:${cat(c).c}">${cat(c).e}</span><span class="name">${esc(c)}</span>
       <input type="number" inputmode="numeric" min="0" step="10000" name="${esc(c)}" value="${b[c] ?? ""}" placeholder="없음" aria-label="${esc(c)} 한 달 예산"></label>`).join("");
   renderCategories();
   renderNotifySettings();
 }
 
 // ---------- 카테고리 관리 ----------
-// 기본 카테고리는 이모지만, 내가 만든 카테고리는 이모지·설명을 바꾸고 지울 수 있다
-const EMOJI_IDEAS = ["🏋️", "📚", "✈️", "🐶", "🎁", "💄", "🎵", "☕", "🍰", "🏠", "💊", "🎓"];
-
+// 아이콘은 기본 카테고리는 이름으로 정해지고, 새 카테고리는 만들 때 고른다. 내가 만든 카테고리는 설명을 바꾸고 지울 수 있다
+// 새 카테고리 칸에 지금 고른 아이콘을 보여준다 (index.html에 #new-emoji-view가 있을 때만)
+function showNewIcon() {
+  const view = $("#new-emoji-view");
+  if (view) view.innerHTML = ico(ICON_BY_EMOJI[noVS($("#new-emoji").value)] || "c-tag");
+}
 async function refreshCategories(message) {
   state.meta = await api("/api/meta");
   applyCategories(state.meta.category_info);
@@ -582,13 +616,14 @@ async function refreshCategories(message) {
 
 function renderCategories() {
   $("#cat-manage").innerHTML = state.meta.category_info.map((c) => `<div class="cat-row">
-      <input class="cat-emoji" value="${esc(c.emoji)}" data-cat-emoji="${esc(c.name)}" maxlength="8" aria-label="${esc(c.name)} 이모지">
+      <span class="cat-ico">${cat(c.name).e}</span>
       <div class="body"><b>${esc(c.name)}</b>
         ${c.builtin ? `<span class="sub">${esc(c.description)}</span>`
           : `<input class="cat-desc" value="${esc(c.description)}" data-cat-desc="${esc(c.name)}" maxlength="80" placeholder="어떤 지출이 들어가나요" aria-label="${esc(c.name)} 설명">`}</div>
       ${c.builtin ? `<span class="lock">기본</span>` : `<button type="button" class="btn btn-ghost" data-cat-del="${esc(c.name)}">삭제</button>`}
     </div>`).join("");
-  $("#emoji-ideas").innerHTML = EMOJI_IDEAS.map((e) => `<button type="button" data-emoji-idea="${e}" aria-label="${e} 고르기">${e}</button>`).join("");
+  $("#emoji-ideas").innerHTML = ICON_IDEAS.map(([e, id]) => `<button type="button" data-emoji-idea="${e}" aria-label="아이콘 고르기">${ico(id)}</button>`).join("");
+  showNewIcon();
 }
 
 $("#cat-manage").addEventListener("change", async (e) => {
@@ -616,7 +651,10 @@ $("#cat-manage").addEventListener("click", async (e) => {
 
 $("#emoji-ideas").addEventListener("click", (e) => {
   const b = e.target.closest("[data-emoji-idea]");
-  if (b) $("#new-emoji").value = b.dataset.emojiIdea;
+  if (!b) return;
+  $("#new-emoji").value = b.dataset.emojiIdea;
+  $$("#emoji-ideas button").forEach((x) => x.classList.toggle("picked", x === b));
+  showNewIcon();
 });
 
 $("#new-add").addEventListener("click", async () => {
@@ -625,6 +663,7 @@ $("#new-add").addEventListener("click", async () => {
     await api("/api/categories", { method: "POST", json: {
       name, emoji: $("#new-emoji").value, description: $("#new-desc").value } });
     ["#new-name", "#new-desc", "#new-emoji"].forEach((s) => ($(s).value = ""));
+    $$("#emoji-ideas button").forEach((x) => x.classList.remove("picked"));
     await refreshCategories(`'${name}'을(를) 만들었어요. 앞으로 올라오는 거래부터 AI가 써요. 예전 거래에도 넣으려면 거래 탭에서 'AI로 다시 분류'를 눌러 주세요.`);
   } catch (err) {
     const status = $("#cat-status");
@@ -759,7 +798,7 @@ function drawReportCharts(root) {
 }
 
 // ---------- 청년정책 ----------
-const FIELD_EMOJI = { 주거: "🏠", 자산: "💰", 일자리: "💼", 교통: "🚇", 문화: "🎟️", 학업: "🎓", 건강: "🌿", 생활: "🎁" };
+const FIELD_ICON = { 주거: "c-house", 자산: "c-wallet", 일자리: "c-briefcase", 교통: "c-bus", 문화: "c-ticket", 학업: "c-cap", 건강: "c-leaf", 생활: "c-gift" };
 
 async function renderPolicyCard() {
   const box = $("#policy-card");
@@ -770,7 +809,7 @@ async function renderPolicyCard() {
       : linked ? `${linked.name} · ${linked.spend.category}와 이어져요`
       : r.items.slice(0, 2).map((i) => i.name).join(", ");
     box.innerHTML = `<button class="policy-card" data-go="policy">
-      <span class="ico">🎁</span>
+      <span class="ico">${ico("c-gift")}</span>
       <span class="body"><b>${r.profile ? `받을 수 있는 청년정책 ${r.items.length}개` : "나한테 맞는 청년정책 찾기"}</b>
         <span class="sub">${esc(sub)}</span></span>
       ${svg("i-arrow")}</button>`;
@@ -779,7 +818,7 @@ async function renderPolicyCard() {
 
 function policyCard(i, closed) {
   return `<article class="policy ${closed ? "closed" : ""}">
-    <div class="p-head"><span class="p-field">${FIELD_EMOJI[i.field] || "📌"} ${esc(i.field)}</span><span class="p-org">${esc(i.org)}</span></div>
+    <div class="p-head"><span class="p-field">${ico(FIELD_ICON[i.field] || "c-tag")}${esc(i.field)}</span><span class="p-org">${esc(i.org)}</span></div>
     <h3>${esc(i.name)}</h3>
     <p class="p-amount">${esc(i.amount)}</p>
     <p class="p-sum">${esc(i.summary)}</p>
