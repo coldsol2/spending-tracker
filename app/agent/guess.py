@@ -118,8 +118,11 @@ def guess(conn: sqlite3.Connection, llm, txn_ids: list[int], hide_ids: set[int] 
 
 
 def apply(conn: sqlite3.Connection, llm, txn_ids: list[int]) -> int:
+    return save(conn, guess(conn, llm, txn_ids))
+
+
+def save(conn: sqlite3.Connection, guesses: dict) -> int:
     """추측을 저장하고, low가 아니면 카테고리에도 반영한다. 사용자 확인 전이라 reviewed는 그대로 0."""
-    guesses = guess(conn, llm, txn_ids)
     for tid, g in guesses.items():
         conn.execute(
             "UPDATE transactions SET ai_guess = ?, ai_confidence = ?, ai_reason = ?, "

@@ -10,6 +10,12 @@ from app import db  # noqa: E402
 from app.agent.client import LLMError  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def api_engine(monkeypatch):
+    """테스트는 진짜 Console 에이전트를 부르지 않는다 (.env의 GUESS_ENGINE=agent를 덮는다)."""
+    monkeypatch.setenv("GUESS_ENGINE", "api")
+
+
 @pytest.fixture
 def conn(tmp_path):
     c = db.connect(tmp_path / "t.db")

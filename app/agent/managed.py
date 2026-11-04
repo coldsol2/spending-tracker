@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 import anthropic
+import httpx2
 
 from .. import categories as cats
 from . import guess
@@ -21,8 +22,10 @@ AGENT_ID = os.environ.get("AGENT_ID", "agent_0128BxkQYuBQBb3NJmcTHWyp")
 ENVIRONMENT_ID = os.environ.get("AGENT_ENVIRONMENT_ID", "env_01Mw2tQr7zFEvZWqqysdU3i7")
 MODEL = os.environ.get("AGENT_MODEL", os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL))  # 기존 API와 같은 모델로 비교
 EFFORT = os.environ.get("AGENT_EFFORT", "medium")  # Haiku 5.5·Opus 5.5 기본값과 같다
+AGENT_VERSION = os.environ.get("AGENT_VERSION")  # 없으면 최신 버전 + 아래 모델·effort
 BUDGET_CENTS = "300"  # 세션 하나에 $3 넘게 쓰지 않는다
 DEADLINE_SECONDS = 15 * 60
+RECONNECTS = 3  # 스트림이 끊기면 다시 붙는 횟수
 
 TASK = """아래 targets는 가게 이름만으로는 용도를 알 수 없는 출금이다(페이 결제, 결제대행사 이름, 친구 송금, 처음 보는 가게).
 각 거래의 카테고리를 추리하라. 도구로 필요한 만큼 더 찾아볼 수 있다:
@@ -42,6 +45,16 @@ reason은 판단에 쓴 단서를 짚는 한국어 한 문장.
 targets:
 {targets}"""
 WEB_HINT = "- web_search: 처음 보는 가게 이름이 무슨 업종인지 (예: 법인명만 적힌 가게 → 마트인지 PC방인지)\n"
+
+
+def _agent(names: list[str], web: bool) -> dict:
+    """AGENT_VERSION을 주면 그 버전의 모델·effort를 그대로 쓴다 (Console에서 만든 버전을 그대로 잴 때)."""
+    agent = {"type": "agent_with_overrides", "id": AGENT_ID, "tools": _tools(names, web)}
+    if AGENT_VERSION:
+        agent["version"] = int(AGENT_VERSION)
+    else:
+        agent["model"] = {"id": MODEL, "effort": {"type": EFFORT}}
+    return agent
 
 
 def _tools(names: list[str], web: bool) -> list[dict]:
@@ -73,36 +86,72 @@ def guess_with_agent(conn: sqlite3.Connection, txn_ids: list[int], hide_ids: set
     started = time.monotonic()
     try:
         session = client.beta.sessions.create(
-            agent={"type": "agent_with_overrides", "id": AGENT_ID, "tools": _tools(names, web),
-                   "model": {"id": MODEL, "effort": {"type": EFFORT}}},
+            agent=_agent(names, web),
             environment_id=ENVIRONMENT_ID,
             title=f"거래 {len(txn_ids)}건 추측",
             budget={"type": "limit", "max_list_cost": {"amount": BUDGET_CENTS, "currency": "USD"}},
+            timeout=60,  # 만들기 요청이 응답 없이 걸려 있으면 제한 시간을 다 잡아먹는다
         )
+        started = time.monotonic()  # 제한 시간은 세션이 만들어진 뒤부터 잰다
         message = TASK.format(web=WEB_HINT if web else "", categories=cats.prompt_list(conn),
                               targets=_targets(conn, txn_ids))
-        with client.beta.sessions.events.stream(session_id=session.id) as stream:
-            client.beta.sessions.events.send(session_id=session.id, events=[
-                {"type": "user.message", "content": [{"type": "text", "text": message}]}])
-            for event in stream:
-                if time.monotonic() - started > DEADLINE_SECONDS:
-                    client.beta.sessions.events.send(session_id=session.id, events=[{"type": "user.interrupt"}])
-                    raise LLMError("에이전트가 제한 시간 안에 끝내지 못했어요.")
-                if event.type == "agent.custom_tool_use":
-                    text, is_error = box.run(event.name, dict(event.input or {}))
-                    client.beta.sessions.events.send(session_id=session.id, events=[{
-                        "type": "user.custom_tool_result", "custom_tool_use_id": event.id, "is_error": is_error,
-                        "content": [{"type": "text", "text": text}]}])
-                elif event.type == "session.error":
-                    raise LLMError(f"에이전트 세션 오류: {getattr(event, 'error', event)}")
-                elif event.type == "session.status_idle":
-                    if event.stop_reason.type == "requires_action":
-                        continue
-                    if event.stop_reason.type != "end_turn":
-                        raise LLMError(f"에이전트가 멈췄어요: {event.stop_reason.type}")
-                    break
-                elif event.type == "session.status_terminated":
-                    break
+        seen: set[str] = set()
+        answered: set[str] = set()
+
+        def handle(event) -> bool:
+            """True면 세션이 끝났다."""
+            if event.type == "agent.custom_tool_use" and event.id not in answered:
+                answered.add(event.id)
+                text, is_error = box.run(event.name, dict(event.input or {}))
+                client.beta.sessions.events.send(session_id=session.id, events=[{
+                    "type": "user.custom_tool_result", "custom_tool_use_id": event.id, "is_error": is_error,
+                    "content": [{"type": "text", "text": text}]}])
+            elif event.type == "user.custom_tool_result":
+                answered.add(event.custom_tool_use_id)
+            elif event.type == "session.error":
+                raise LLMError(f"에이전트 세션 오류: {getattr(event, 'error', event)}")
+            elif event.type == "session.status_idle" and event.stop_reason.type != "requires_action":
+                if event.stop_reason.type != "end_turn":
+                    raise LLMError(f"에이전트가 멈췄어요: {event.stop_reason.type}")
+                return True
+            return event.type == "session.status_terminated"
+
+        sent = done = False
+        for attempt in range(RECONNECTS + 1):
+            try:
+                with client.beta.sessions.events.stream(session_id=session.id) as stream:
+                    if not sent:
+                        client.beta.sessions.events.send(session_id=session.id, events=[
+                            {"type": "user.message", "content": [{"type": "text", "text": message}]}])
+                        sent = True
+                    else:  # 끊긴 사이에 온 이벤트를 먼저 읽는다 (스트림은 다시 보내 주지 않는다)
+                        history = list(client.beta.sessions.events.list(session_id=session.id))
+                        for event in history:
+                            seen.add(event.id)
+                        # 끝난 뒤의 상태만 보고 판단하고, 답 안 한 도구 호출은 지금 답한다
+                        for event in history:
+                            if event.type != "session.status_idle" and handle(event):
+                                done = True
+                        last = next((e for e in reversed(history) if e.type.startswith("session.status")), None)
+                        if last is not None and handle(last):
+                            done = True
+                    for event in [] if done else stream:
+                        if time.monotonic() - started > DEADLINE_SECONDS:
+                            client.beta.sessions.events.send(session_id=session.id,
+                                                             events=[{"type": "user.interrupt"}])
+                            raise LLMError("에이전트가 제한 시간 안에 끝내지 못했어요.")
+                        eid = getattr(event, "id", None)
+                        if eid is not None and eid in seen and event.type != "agent.custom_tool_use":
+                            continue
+                        seen.add(eid)
+                        if handle(event):
+                            done = True
+                            break
+                break
+            except (httpx2.TransportError, anthropic.APIConnectionError):
+                if attempt == RECONNECTS:
+                    raise LLMError("에이전트 연결이 계속 끊겼어요.")
+                time.sleep(2 * (attempt + 1))
         usage = client.beta.sessions.retrieve(session.id).usage
         cost = getattr(getattr(usage, "list_cost", None), "amount", None)
     except anthropic.APIError as e:

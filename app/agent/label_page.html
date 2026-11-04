@@ -79,6 +79,13 @@ h1 { font-size: 18px; margin: 0; }
 .pays .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pays .a { font-family: var(--num); flex: none; }
 .pays p { margin: 8px 0 0; font-size: 12px; color: var(--ink-faint); }
+.ver { font-size: 12px; color: var(--ink-faint); margin: -10px 0 12px; }
+.seg { display: flex; gap: 6px; background: var(--lilac-soft); padding: 4px; border-radius: 16px; margin-bottom: 10px; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--ink-soft); border-radius: 12px; padding: 9px 4px;
+  cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; }
+.seg button.on { background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
+.seg b { font-family: var(--num); font-weight: 500; font-size: 12px; color: var(--ink-faint); margin-left: 2px; }
+.pick-hint { margin: 14px 2px -6px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
 .finish { text-align: center; padding: 28px 10px; }
 .finish b { display: block; font-size: 20px; margin-bottom: 6px; }
 </style>
@@ -89,6 +96,11 @@ h1 { font-size: 18px; margin: 0; }
     <h1>정답 매기기</h1>
     <span class="count" id="count"></span>
   </header>
+  <p class="ver" id="ver"></p>
+  <div class="seg" id="seg">
+    <button data-mode="out">💸 나간 돈 <b id="cnt-out"></b></button>
+    <button data-mode="in">💰 들어온 돈 <b id="cnt-in"></b></button>
+  </div>
   <div class="bar"><i id="bar"></i></div>
 
   <section class="card" id="card">
@@ -104,6 +116,7 @@ h1 { font-size: 18px; margin: 0; }
     아래 버튼으로 파일을 저장해서 보내주세요.
   </section>
 
+  <p class="pick-hint" id="pick-hint"></p>
   <div class="grid" id="grid"></div>
   <section class="pays" id="pays" hidden></section>
   <button class="same" id="same" hidden></button>
@@ -119,17 +132,34 @@ h1 { font-size: 18px; margin: 0; }
 
 <script>
 const DATA = /*DATA*/;
-const KEY = "label-answers-" + DATA.key;
+const KEY = "label-answers-" + DATA.key;  // 페이지를 새로 만들면 key가 바뀌어 이전 답은 처음부터
 const won = n => n.toLocaleString("ko-KR") + "원";
 let answers = {};
 try { answers = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+// --prefill로 만들었을 때만: 앱에서 이미 고른 답을 미리 채운다. 여기서 바꾼 답이 우선.
+for (const [id, a] of Object.entries(DATA.preset || {})) {
+  if (!answers[id]) answers[id] = { ...a, fromApp: true };
+}
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(answers)); } catch (e) {} };
-const rows = DATA.rows;
 const answered = r => answers[r.id] && answers[r.id].category;
-let i = Math.max(0, rows.findIndex(r => !answered(r)));
-if (rows.every(answered)) i = rows.length;
+
+// 나간 돈(카테고리 13개)과 들어온 돈(수입 종류 5개)은 따로 매긴다
+const all = DATA.rows;
+const lists = { out: all.filter(r => !r.in), in: all.filter(r => r.in) };
+const firstOpen = list => { const k = list.findIndex(r => !answered(r)); return k < 0 ? list.length : k; };
+const pos = { out: firstOpen(lists.out), in: firstOpen(lists.in) };
+let mode = "out", rows = lists.out, i = pos.out;
+function setMode(m) {
+  pos[mode] = i;
+  mode = m; rows = lists[m]; i = pos[m];
+  gridFor = null;
+  document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+  render();
+}
 
 const $ = id => document.getElementById(id);
+$("ver").textContent = `${DATA.built} 버전 · 나간 돈 카테고리 ${DATA.categories.length}개 · 들어온 돈 종류 ${DATA.income.length}개`;
+document.querySelectorAll("#seg button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
 const choices = r => r.in ? DATA.income : DATA.categories;  // 들어온 돈은 따로 (정산·용돈·알바비…)
 let gridFor = null;
 function drawGrid(r) {
@@ -160,12 +190,17 @@ function drawPays(r, a) {
 
 function render() {
   const total = rows.length, done = rows.filter(answered).length;
-  $("count").textContent = `${done} / ${total}`;
+  $("count").textContent = `전체 ${all.filter(answered).length} / ${all.length}`;
+  $("cnt-out").textContent = `${lists.out.filter(answered).length}/${lists.out.length}`;
+  $("cnt-in").textContent = `${lists.in.filter(answered).length}/${lists.in.length}`;
   $("bar").style.width = (done / total * 100) + "%";
   const end = i >= total;
   $("card").hidden = end; $("finish").hidden = !end;
   $("prev").disabled = i === 0;
-  if (end) { $("same").hidden = true; $("pays").hidden = true; return; }
+  $("pick-hint").textContent = end ? "" : mode === "in"
+    ? `들어온 돈은 어떤 돈인지 ${DATA.income.length}가지 중에서 골라요`
+    : `어디에 쓴 돈인지 카테고리 ${DATA.categories.length}개 중에서 골라요`;
+  if (end) { $("same").hidden = true; $("pays").hidden = true; $("grid").innerHTML = ""; gridFor = null; return; }
   const r = rows[i], a = answers[r.id] || {};
   drawGrid(r);
   drawPays(r, a);
@@ -177,6 +212,7 @@ function render() {
   $("dir").classList.toggle("in", r.in);
   $("kind").textContent = r.kind || (r.in ? "입금" : "결제");
   $("badge").hidden = !a.category;
+  $("badge").textContent = a.fromApp ? "✓ 앱에서 고른 답" : "✓ 골랐어요";
   $("near").innerHTML = r.near.length
     ? "<h3>앞뒤 2시간 거래</h3>" + r.near.map(n =>
         `<div><span class="t">${n.time}</span><span class="n">${esc(n.name)}</span>` +
@@ -193,6 +229,7 @@ const esc = s => s.replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&g
 function pick(cat) {
   const r = rows[i];
   answers[r.id] = { ...(answers[r.id] || {}), category: cat };
+  delete answers[r.id].fromApp;
   if (cat !== "정산") delete answers[r.id].pays;
   persist();
   // 같은 이름이 더 있으면 한 번에 정할 기회를, 정산이면 결제를 고를 기회를 준다
@@ -244,7 +281,7 @@ document.addEventListener("keydown", e => {
 $("save").onclick = () => {
   const q = s => `"${String(s || "").replace(/"/g, '""')}"`;
   const lines = ["번호,방향,정답,정산결제,메모",
-    ...rows.filter(r => answers[r.id] && (answers[r.id].category || answers[r.id].memo)).map(r => {
+    ...all.filter(r => answers[r.id] && (answers[r.id].category || answers[r.id].memo)).map(r => {
       const a = answers[r.id];
       return [r.id, r.in ? "들어옴" : "나감", q(a.category), q((a.pays || []).join(" ")), q(a.memo)].join(",");
     })];
@@ -254,7 +291,7 @@ $("save").onclick = () => {
   a.download = "정답.csv";
   a.click();
 };
-render();
+setMode("out");
 </script>
 </body>
 </html>

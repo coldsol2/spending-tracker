@@ -81,7 +81,26 @@ def export(conn: sqlite3.Connection, out: Path) -> int:
     return len(rows)
 
 
-def page(conn: sqlite3.Connection, out: Path) -> int:
+def _preset(conn: sqlite3.Connection, app: sqlite3.Connection) -> dict:
+    """앱에서 이미 고른 답을 미리 채운다: 직접 고른 카테고리, 확정한 정산(어느 결제의 몫인지까지).
+    두 DB는 거래 id가 달라서 (시각, 이름, 금액, 방향)으로 맞춘다."""
+    key = lambda r: (r["occurred_at"], r["description"], r["amount"], r["direction"])  # noqa: E731
+    ids = {key(r): r["id"] for r in conn.execute("SELECT * FROM transactions")}
+    app_ids = {r["id"]: ids.get(key(r)) for r in app.execute("SELECT * FROM transactions")}
+    out: dict[int, dict] = {}
+    for r in app.execute("SELECT * FROM transactions WHERE direction = 'out' AND reviewed = 1"):
+        if app_ids.get(r["id"]):
+            out[app_ids[r["id"]]] = {"category": r["category"]}
+    for r in app.execute("SELECT incoming_id, payment_id FROM settlements WHERE status = 'confirmed'"):
+        tid, pid = app_ids.get(r["incoming_id"]), app_ids.get(r["payment_id"])
+        if tid:
+            got = out.setdefault(tid, {"category": "정산", "pays": []})
+            if pid:
+                got["pays"].append(pid)
+    return out
+
+
+def page(conn: sqlite3.Connection, out: Path, prefill: sqlite3.Connection | None = None) -> int:
     """클릭으로 정답을 고르는 한 장짜리 HTML. 서버 없이 열리고, 고른 답은 정답.csv로 저장한다.
     실제 거래가 들어 있으니 data/ 밖으로(공유·업로드) 내보내지 않는다."""
     near_span = timedelta(hours=2)
@@ -104,9 +123,12 @@ def page(conn: sqlite3.Connection, out: Path) -> int:
             row["pays"] = [{"id": every[j]["id"], "when": when(at[j]), "name": every[j]["description"],
                             "amount": every[j]["amount"]} for j in pays]
         rows.append(row)
-    data = {"key": hashlib.sha1(str([r["id"] for r in rows]).encode()).hexdigest()[:10],
+    built = datetime.now()
+    # 만든 시각을 key에 넣어서, 페이지를 새로 만들면 이 브라우저에 저장된 이전 답은 쓰지 않고 처음부터 시작한다
+    data = {"key": hashlib.sha1(f"{[r['id'] for r in rows]}{built.isoformat()}".encode()).hexdigest()[:10],
+            "built": f"{built.month}월 {built.day}일 {built:%H:%M}",
             "categories": [{k: c[k] for k in ("name", "emoji", "description")} for c in cats.all_categories(conn)],
-            "income": income.INCOME, "rows": rows}
+            "income": income.INCOME, "rows": rows, "preset": _preset(conn, prefill) if prefill else {}}
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     html = (Path(__file__).with_name("label_page.html")).read_text(encoding="utf-8").replace("/*DATA*/", blob)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +181,12 @@ def load(conn: sqlite3.Connection, path: Path) -> dict:
     return {"loaded": loaded, "income": got_income, "blank": blank, "problems": problems}
 
 
+def _app_conn(eval_db: Path) -> sqlite3.Connection | None:
+    """앱 DB(앱에서 이미 고른 답을 미리 채우는 데 쓴다). 검증용 DB와 같거나 없으면 None."""
+    app_db = db.ROOT / "data" / "app.db"
+    return db.connect(app_db) if app_db.exists() and app_db.resolve() != eval_db.resolve() else None
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="성능검증용 정답지 만들기·넣기")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -169,6 +197,7 @@ def main() -> None:
     e.add_argument("--no-ai", action="store_true", help="AI 없이 거래만 넣고 정답지를 만든다 (비용 0)")
     pg = sub.add_parser("page", help="검증용 DB의 거래로 클릭해서 고르는 화면(HTML)을 만든다")
     pg.add_argument("--out", type=Path, default=PAGE)
+    pg.add_argument("--prefill", action="store_true", help="앱에서 이미 고른 답(카테고리·확정 정산)을 미리 채운다")
     lo = sub.add_parser("load", help="채운 정답지(엑셀) 또는 정답.csv를 검증용 DB에 넣는다")
     lo.add_argument("sheet", type=Path, nargs="?", default=SHEET)
     for s in (e, pg, lo):
@@ -190,7 +219,8 @@ def main() -> None:
         print(f"정답지: {args.out} (나간 돈 {n}건)")
         print(f"클릭 화면: {PAGE} ({page(conn, PAGE)}건)")
     elif args.cmd == "page":
-        print(f"클릭 화면: {args.out} ({page(conn, args.out)}건)")
+        prefill = _app_conn(args.db) if args.prefill else None
+        print(f"클릭 화면: {args.out} ({page(conn, args.out, prefill)}건)")
     else:
         r = load(conn, args.sheet)
         print(f"나간 돈 정답 {r['loaded']}건, 들어온 돈 정답 {r['income']}건 넣음, 빈칸 {r['blank']}건")

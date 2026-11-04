@@ -1,11 +1,13 @@
 """DB와 순수 로직, AI 모듈을 엮는 앱 동작들."""
 import calendar
+import logging
+import os
 import sqlite3
 from datetime import date, datetime, timedelta
 
 from . import categories, settle, stats
 from .agent import categorize as cat_agent
-from .agent import extract, guess, income, match
+from .agent import extract, guess, income, managed, match
 from .agent.client import LLMError, column_mapper
 from .parser import parse_file
 
@@ -313,7 +315,29 @@ def guess_pending(conn: sqlite3.Connection, llm) -> int:
     ids = [r["id"] for r in conn.execute(
         "SELECT t.id FROM transactions t LEFT JOIN merchant_categories m ON m.merchant = t.description "
         f"WHERE {NEEDS_REVIEW} AND t.ai_guess IS NULL")]
-    return guess.apply(conn, llm, ids)
+    if not ids:
+        return 0
+    return guess.save(conn, _guess(conn, llm, ids))
+
+
+AGENT_BATCH = 120  # 에이전트 세션 하나에 맡기는 거래 수 (채점 때 한 묶음 크기와 비슷하게)
+
+
+def _guess(conn: sqlite3.Connection, llm, ids: list[int]) -> dict:
+    """GUESS_ENGINE=agent면 Console 에이전트(AGENT_VERSION 버전)에 맡긴다.
+    에이전트가 실패하거나 빠뜨린 거래는 기존 API로 추측한다."""
+    result: dict = {}
+    if os.environ.get("GUESS_ENGINE", "api") == "agent":
+        try:
+            for i in range(0, len(ids), AGENT_BATCH):
+                part, _ = managed.guess_with_agent(conn, ids[i:i + AGENT_BATCH])
+                result.update(part)
+        except LLMError as e:
+            logging.warning("에이전트 추측 실패, 기존 API로 대신함: %s", e)
+    rest = [i for i in ids if i not in result]
+    if rest:
+        result.update(guess.guess(conn, llm, rest))
+    return result
 
 
 # ---- 정산 ----

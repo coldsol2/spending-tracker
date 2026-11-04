@@ -47,6 +47,23 @@ def test_click_page_and_csv_answers(conn, tmp_path):
     assert tuple(row) == ("유흥", 1)
 
 
+def test_page_prefills_answers_already_chosen_in_app(conn, tmp_path):
+    from app import db, service
+    from test_guess import evening
+    app_conn = db.connect(tmp_path / "app.db")
+    for c in (conn, app_conn):
+        evening(c)  # 같은 거래를 두 DB에 (id는 달라도 시각·이름·금액으로 맞춘다)
+    service.set_category(app_conn, tid(app_conn, "kp"), "유흥", "one")  # 앱에서 고른 답
+    html = tmp_path / "p.html"
+    answer_sheet.page(conn, html, prefill=app_conn)
+    text = html.read_text(encoding="utf-8")
+    import json
+    import re
+    preset = json.loads(re.search(r"const DATA = (.*?);\n", text, re.S).group(1).replace("<\\/", "</"))["preset"]
+    assert preset[str(tid(conn, "kp"))] == {"category": "유흥"}
+    assert preset[str(tid(conn, "back"))] == {"category": "정산", "pays": [tid(conn, "nice")]}  # 확정한 정산
+
+
 def test_income_answers_with_settled_payments(conn, tmp_path):
     from test_guess import evening
     evening(conn)  # 나이스 결제 + 친구 입금

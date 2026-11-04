@@ -144,3 +144,7 @@ python -m app.agent.evaluate --db data/eval.db --target in    # 들어온 돈: �
 - 들어온 돈: 결제 취소·확정 정산은 규칙으로, 나머지는 보낸 사람 패턴·근처 결제 금액으로 종류를 추측.
 - 어려운 거래는 Claude 콘솔에서 만든 **분류 전용 에이전트**(Managed Agents)에게 맡길 수 있어요(`app/agent/managed.py`).
   에이전트는 앱이 주는 거래 조회 도구(`app/agent/agent_tools.py`)로 필요한 만큼 더 찾아봐요.
+  - `.env`에 `GUESS_ENGINE=agent`, `AGENT_VERSION=8`을 넣으면 분류 확인 거래를 에이전트 v8이 추측해요.
+    에이전트가 실패하거나 빠뜨린 거래는 기존 API가 대신 추측해서 업로드는 멈추지 않아요.
+  - 분류 규칙은 스킬로 따로 둬요: `.claude/skills/transaction-categorizer/SKILL.md` (콘솔에 올려 에이전트에 붙임).
+  - 검증 결과: 정답 372건 기준 에이전트 v8 69%, 기존 에이전트 55%, Haiku 단독 63% — `docs/에이전트_v8_성능검증.pdf`.

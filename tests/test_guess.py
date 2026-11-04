@@ -76,3 +76,37 @@ def test_guess_ignores_unasked_ids_and_bad_categories(conn):
         Guess(txn_id=kp, category="유흥", confidence="high", reason="x"),
         Guess(txn_id=999, category="술", confidence="high", reason="x")])})
     assert guess.guess(conn, llm, [kp]) == {kp: {"category": "유흥", "confidence": "high", "reason": "x"}}
+
+
+def test_agent_engine_guesses_and_api_fills_the_rest(conn, monkeypatch):
+    """GUESS_ENGINE=agent: Console 에이전트가 낸 답을 쓰고, 빠뜨린 거래만 기존 API로 추측한다."""
+    from app.agent import managed
+    evening(conn)
+    monkeypatch.setenv("GUESS_ENGINE", "agent")
+    kp = tid(conn, "kp")
+    monkeypatch.setattr(managed, "guess_with_agent", lambda c, ids: (
+        {kp: {"category": "유흥", "confidence": "high", "reason": "만화카페 10분 뒤"}}, {}))
+    asked = []
+
+    def handle(p):
+        asked.extend(t["name"] for t in p["targets"])
+        return GuessResult(guesses=[Guess(txn_id=t["txn_id"], category="술", confidence="medium", reason="api")
+                                    for t in p["targets"]])
+    assert service.guess_pending(conn, FakeLLM({"GuessResult": handle})) == 3
+    assert sorted(asked) == ["대표일반_나이스", "토스페이"]
+    row = conn.execute("SELECT category, ai_reason FROM transactions WHERE id = ?", (kp,)).fetchone()
+    assert tuple(row) == ("유흥", "만화카페 10분 뒤")
+
+
+def test_agent_failure_falls_back_to_api(conn, monkeypatch):
+    from app.agent import managed
+    from app.agent.client import LLMError
+    evening(conn)
+    monkeypatch.setenv("GUESS_ENGINE", "agent")
+
+    def broken(c, ids):
+        raise LLMError("연결 끊김")
+    monkeypatch.setattr(managed, "guess_with_agent", broken)
+    llm = FakeLLM({"GuessResult": lambda p: GuessResult(guesses=[
+        Guess(txn_id=t["txn_id"], category="편의점", confidence="high", reason="api") for t in p["targets"]])})
+    assert service.guess_pending(conn, llm) == 3  # 업로드는 멈추지 않는다

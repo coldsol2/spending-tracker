@@ -7,6 +7,7 @@ data/
 # 혹시 프로젝트 폴더에 둔 실제 거래내역서
 *.pdf
 !samples/*.pdf
+!docs/*.pdf
 *.xlsx
 !samples/*.xlsx
 
@@ -24,5 +25,6 @@ Thumbs.db
 # 데모 빌드 결과
 demo/dist/
 
-# 개발 도구 설정
-.claude/
+# 개발 도구 설정 (에이전트 스킬은 함께 올린다)
+.claude/*
+!.claude/skills/
