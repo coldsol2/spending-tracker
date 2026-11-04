@@ -87,7 +87,6 @@ PDF는 표를 먼저 읽고, 표가 안 잡히면 날짜로 시작하는 줄을 
 | `app/settle.py`, `app/stats.py` | 정산 후보 규칙, 실지출 집계 (AI 없음) |
 | `app/agent/` | Claude 호출: 카테고리 분류, 거래별 추측, 들어온 돈 분류, 정산 매칭, PDF 추출, 주간 보고서, 콘솔 에이전트 |
 | `app/categories.py` | 기본·사용자 카테고리 (이모지, 추가·삭제) |
-| `agent_app/` | 콘솔 에이전트와 대화해 보는 최소 예제 |
 | `app/service.py` | DB와 위 모듈을 엮는 앱 동작 |
 | `app/main.py` | FastAPI 서버 |
 | `static/` | 화면 (HTML·CSS·JS, 빌드 과정 없음) |
