@@ -148,3 +148,7 @@ python -m app.agent.evaluate --db data/eval.db --target in    # 들어온 돈: �
     에이전트가 실패하거나 빠뜨린 거래는 기존 API가 대신 추측해서 업로드는 멈추지 않아요.
   - 분류 규칙은 스킬로 따로 둬요: `.claude/skills/transaction-categorizer/SKILL.md` (콘솔에 올려 에이전트에 붙임).
   - 검증 결과: 정답 372건 기준 에이전트 v8 69%, 기존 에이전트 55%, Haiku 단독 63% — `docs/에이전트_v8_성능검증.pdf`.
+- 주간 보고서는 콘솔의 **보고서 전용 에이전트**(주간 실지출 리포터)가 써요(`app/agent/report_agent.py`).
+  - `.env`에 `REPORT_ENGINE=agent`, `REPORT_AGENT_VERSION=3`. 실패하면 기존 API가 대신 써요.
+  - 숫자는 앱 도구(week_summary · budgets · find_transactions · last_report)가 계산하고, 에이전트는 글·표·그래프만 써요.
+  - 양식은 스킬 `.claude/skills/weekly-report-writer/SKILL.md`. 보고서 속 ```` ```chart ```` JSON 블록은 화면에서 막대그래프로 그려져요.

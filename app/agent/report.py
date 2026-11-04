@@ -1,5 +1,7 @@
 """주간 절약 보고서. 숫자는 코드가 계산하고, Claude는 해석과 제안만 쓴다."""
 import json
+import logging
+import os
 import sqlite3
 import threading
 from datetime import date, datetime, timedelta
@@ -47,7 +49,15 @@ def generate(conn: sqlite3.Connection, llm, week_start: date) -> str:
     if llm is None:
         raise LLMError(service.NO_KEY_WARNING)
     ws = week_start_of(week_start)
-    content = llm.text(SYSTEM, json.dumps(build_week_input(conn, ws), ensure_ascii=False))
+    content = None
+    if os.environ.get("REPORT_ENGINE", "api") == "agent":
+        from . import report_agent  # 순환 import를 피해 여기서 부른다
+        try:
+            content, _ = report_agent.write(conn, ws)
+        except LLMError as e:
+            logging.warning("보고서 에이전트 실패, 기존 API로 대신 씀: %s", e)
+    if content is None:
+        content = llm.text(SYSTEM, json.dumps(build_week_input(conn, ws), ensure_ascii=False))
     conn.execute(
         "INSERT INTO reports(week_start, content, created_at) VALUES (?, ?, ?) "
         "ON CONFLICT(week_start) DO UPDATE SET content = excluded.content, created_at = excluded.created_at",

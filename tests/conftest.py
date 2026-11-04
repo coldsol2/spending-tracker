@@ -14,6 +14,7 @@ from app.agent.client import LLMError  # noqa: E402
 def api_engine(monkeypatch):
     """테스트는 진짜 Console 에이전트를 부르지 않는다 (.env의 GUESS_ENGINE=agent를 덮는다)."""
     monkeypatch.setenv("GUESS_ENGINE", "api")
+    monkeypatch.setenv("REPORT_ENGINE", "api")
 
 
 @pytest.fixture

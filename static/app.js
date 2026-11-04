@@ -656,6 +656,7 @@ async function loadReport() {
   $("#report-btn").textContent = saved ? "다시 만들기" : "보고서 만들기";
   $("#report-body").innerHTML = saved ? DOMPurify.sanitize(marked.parse(saved.content))
     : `<div class="empty">이 주의 보고서가 아직 없어요. 보고서 만들기를 누르면 AI가 써 줘요.</div>`;
+  drawReportCharts($("#report-body"));
   drawMonthChart(s.daily);
 }
 
@@ -697,6 +698,40 @@ function drawMonthChart(daily) {
           ticks: { color: "#a597b5", precision: 0, maxTicksLimit: 4, callback: (v) => short(v) } },
       },
     },
+  });
+}
+
+// 보고서 에이전트가 쓴 ```chart 블록(JSON)을 막대그래프로 바꾼다. 형식이 틀린 블록은 글 그대로 둔다.
+state.reportCharts = [];
+function drawReportCharts(root) {
+  state.reportCharts.forEach((c) => c.destroy());
+  state.reportCharts = [];
+  root.querySelectorAll("pre > code.language-chart").forEach((code) => {
+    let spec;
+    try { spec = JSON.parse(code.textContent); } catch { return; }
+    const n = spec.labels?.length;
+    const series = spec.type === "compare"
+      ? [{ label: "지난주", data: spec.last, backgroundColor: "#e3d6f5" }, { label: "이번 주", data: spec.this, backgroundColor: "#a98bea" }]
+      : [{ label: spec.title || "", data: spec.values, backgroundColor: "#a98bea" }];
+    if (!n || series.some((d) => !Array.isArray(d.data) || d.data.length !== n)) return;
+    const box = document.createElement("figure");
+    box.className = "report-chart";
+    box.innerHTML = `${spec.title ? `<figcaption>${esc(spec.title)}</figcaption>` : ""}<div class="chart-box"><canvas></canvas></div>`;
+    code.parentElement.replaceWith(box);
+    state.reportCharts.push(new Chart(box.querySelector("canvas"), {
+      type: "bar",
+      data: { labels: spec.labels, datasets: series.map((d) => ({ ...d, borderRadius: 6, borderSkipped: false, maxBarThickness: 22 })) },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: series.length > 1, position: "bottom", labels: { boxWidth: 10, color: "#6b6280" } },
+          tooltip: { callbacks: { label: (i) => `${series.length > 1 ? `${i.dataset.label} ` : ""}${won(i.raw)}` } } },
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, ticks: { color: "#a597b5", maxRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: "#eee6f6" }, border: { display: false },
+            ticks: { color: "#a597b5", precision: 0, maxTicksLimit: 4, callback: (v) => short(v) } },
+        },
+      },
+    }));
   });
 }
 

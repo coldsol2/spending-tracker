@@ -80,32 +80,44 @@ def guess_with_agent(conn: sqlite3.Connection, txn_ids: list[int], hide_ids: set
     if not txn_ids:
         return {}, {}
     web = os.environ.get("WEB_SEARCH") == "1" if web is None else web
-    client = client or anthropic.Anthropic()
-    names = cats.names(conn)
     box = Toolbox(conn, txn_ids, hide_ids)
+    message = TASK.format(web=WEB_HINT if web else "", categories=cats.prompt_list(conn),
+                          targets=_targets(conn, txn_ids))
+    info, _ = run_session(client or anthropic.Anthropic(), _agent(cats.names(conn), web),
+                          f"거래 {len(txn_ids)}건 추측", message, box)
+    return box.submitted, info
+
+
+def run_session(client: anthropic.Anthropic, agent: dict, title: str, message: str, box) -> tuple[dict, str]:
+    """에이전트 세션 하나를 끝까지 돌린다. box.run(이름, 입력) -> (답, 오류 여부)로 도구 호출에 답한다.
+    반환: (실행 정보 {session_id, cost_usd, tool_calls, seconds}, 에이전트가 마지막에 쓴 글)"""
     started = time.monotonic()
+    last_text = ""
     try:
         session = client.beta.sessions.create(
-            agent=_agent(names, web),
+            agent=agent,
             environment_id=ENVIRONMENT_ID,
-            title=f"거래 {len(txn_ids)}건 추측",
+            title=title,
             budget={"type": "limit", "max_list_cost": {"amount": BUDGET_CENTS, "currency": "USD"}},
             timeout=60,  # 만들기 요청이 응답 없이 걸려 있으면 제한 시간을 다 잡아먹는다
         )
         started = time.monotonic()  # 제한 시간은 세션이 만들어진 뒤부터 잰다
-        message = TASK.format(web=WEB_HINT if web else "", categories=cats.prompt_list(conn),
-                              targets=_targets(conn, txn_ids))
         seen: set[str] = set()
         answered: set[str] = set()
 
         def handle(event) -> bool:
             """True면 세션이 끝났다."""
+            nonlocal last_text
             if event.type == "agent.custom_tool_use" and event.id not in answered:
                 answered.add(event.id)
                 text, is_error = box.run(event.name, dict(event.input or {}))
                 client.beta.sessions.events.send(session_id=session.id, events=[{
                     "type": "user.custom_tool_result", "custom_tool_use_id": event.id, "is_error": is_error,
                     "content": [{"type": "text", "text": text}]}])
+            elif event.type == "agent.message":
+                text = "".join(getattr(b, "text", "") for b in event.content or [])
+                if text.strip():
+                    last_text = text
             elif event.type == "user.custom_tool_result":
                 answered.add(event.custom_tool_use_id)
             elif event.type == "session.error":
@@ -158,4 +170,4 @@ def guess_with_agent(conn: sqlite3.Connection, txn_ids: list[int], hide_ids: set
         raise LLMError(f"에이전트 호출 실패: {e}") from e
     info = {"session_id": session.id, "cost_usd": float(cost) / 100 if cost is not None else None,
             "tool_calls": box.calls, "seconds": round(time.monotonic() - started)}
-    return box.submitted, info
+    return info, last_text
