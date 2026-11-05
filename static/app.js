@@ -121,9 +121,9 @@ async function loadHome() {
   $("#projected").textContent = `대기 중인 정산을 확정하면 ${won(s.projected_total)}`;
 
   const elapsed = isThisMonth ? new Date().getDate() : daysIn(state.month);
-  $("#today").textContent = isThisMonth ? short(s.today) : "-";
-  $("#avg").textContent = short(s.total / Math.max(1, elapsed));
-  $("#income").textContent = short(s.income);
+  $("#today").textContent = isThisMonth ? `${short(s.today)}원` : "-";
+  $("#avg").textContent = `${short(s.total / Math.max(1, elapsed))}원`;
+  $("#income").textContent = `${short(s.income)}원`;
   $("#review-num").textContent = `${badges.review.length}건`;
 
   state.home = { s, badges };
@@ -234,7 +234,7 @@ function renderFeature(s, { settlements, review }) {
       <button class="btn btn-ink" data-go="upload">거래내역 올리기 ${svg("i-arrow")}</button></div>`;
   } else if (settlements.pending.length) {
     const sum = settlements.pending.reduce((a, p) => a + p.incoming.amount, 0);
-    html = `<div class="feature"><p class="kicker">정산 확인</p><h3>친구들이 보낸 ${won(sum)}, 어디에 쓴 돈일까요</h3>
+    html = `<div class="feature"><p class="kicker">정산 확인</p><h3>친구들이 보낸 ${won(sum)},<br>어디에 쓴 돈일까요</h3>
       <p>AI가 ${settlements.pending.length}건을 결제에 연결해 봤어요. 맞는지만 눌러 주세요.</p>
       <button class="btn btn-ink" data-go="settle">정산 확인하기 ${svg("i-arrow")}</button></div>`;
   } else if (review.length) {
@@ -812,7 +812,7 @@ async function renderPolicyCard() {
       <span class="ico">${ico("c-gift")}</span>
       <span class="body"><b>${r.profile ? `받을 수 있는 청년정책 ${r.items.length}개` : "나한테 맞는 청년정책 찾기"}</b>
         <span class="sub">${esc(sub)}</span></span>
-      ${svg("i-arrow")}</button>`;
+      <span class="go">${svg("i-arrow")}</span></button>`;
   } catch { box.innerHTML = ""; }
 }
 
