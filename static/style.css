@@ -10,6 +10,7 @@
   --lilac: #c3aff5;
   --lilac-soft: #f0eafc;
   --lilac-deep: #7b5cd6;
+  --brand: #8461c1;  /* Dontory 로고 보라 */
   --pink: #f28c4f;          /* 강조색: 오렌지 (변수 이름은 기존 그대로) */
   --pink-soft: #fdeadb;
   --sun: #ffcf5c;
@@ -194,8 +195,8 @@ button { cursor: pointer; }
 /* ---------- 홈: 숫자 4개 ---------- */
 .quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
 .quad > div { text-align: center; padding: 14px 4px 12px; border-radius: 20px; background: var(--paper-tint); }
-.quad > div:nth-child(1) { background: var(--sun-soft); }
-.quad > div:nth-child(3) { background: var(--peach-soft); }
+.quad > div:nth-child(-n+3) { background: var(--lilac-soft); }
+.quad > div:nth-child(4) { background: var(--sun-soft); }
 .quad .ico { height: 24px; display: grid; place-items: center; }
 .quad .ico .ci { width: 22px; height: 22px; }
 .quad .k { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; }
@@ -478,7 +479,7 @@ button { cursor: pointer; }
 .tabbar button.active svg { color: var(--lilac-deep); }
 .tabbar .fab {
   width: 58px; height: 58px; margin: -30px auto 0; border-radius: 22px;
-  background: var(--pink); color: var(--paper); display: grid; place-items: center; gap: 0;
+  background: var(--brand); color: var(--paper); display: grid; place-items: center; gap: 0;
   box-shadow: var(--shadow-float);
 }
 .tabbar .fab svg { width: 26px; height: 26px; color: var(--paper) !important; }
@@ -500,7 +501,7 @@ button { cursor: pointer; }
 /* ---------- 청년정책 ---------- */
 .policy-card {
   width: 100%; display: flex; align-items: center; gap: 14px; text-align: left; margin: 0 0 18px;
-  padding: 20px 18px 20px 20px; border: none; border-radius: 28px; background: var(--lilac-deep); color: #fff;
+  padding: 20px 18px 20px 20px; border: none; border-radius: 28px; background: var(--brand); color: #fff;
   font: inherit; cursor: pointer;
 }
 .policy-card .ico { width: 48px; height: 48px; border-radius: 16px; background: #fff; display: grid; place-items: center; flex: none; }
@@ -510,7 +511,7 @@ button { cursor: pointer; }
 .policy-card .sub { font-size: 13px; line-height: 1.45; color: rgba(255, 255, 255, .82); text-wrap: balance; }
 .policy-card .go { width: 36px; height: 36px; border-radius: 50%; background: rgba(255, 255, 255, .2); display: grid; place-items: center; flex: none; }
 .policy-card .go svg { width: 18px; height: 18px; color: #fff; }
-.policy-card:hover { background: #6f4fcc; }
+.policy-card:hover { background: #7553b3; }
 .policy-form { display: grid; gap: 10px; }
 .policy-form[hidden] { display: none; }
 .pf-alone { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -566,7 +567,7 @@ button { cursor: pointer; }
 }
 
 /* ---------- 홈 위쪽 가운데 앱 아이콘 ---------- */
-#view-home .topbar { position: relative; min-height: 48px; }
+#view-home .topbar { position: relative; min-height: 48px; margin-bottom: 12px; }
 .brand-mark {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: 176px; height: 38px; background: var(--wordmark) center / contain no-repeat;
